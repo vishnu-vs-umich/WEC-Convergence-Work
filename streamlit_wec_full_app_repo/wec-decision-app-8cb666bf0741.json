@@ -1,0 +1,13 @@
+{
+  "type": "service_account",
+  "project_id": "wec-decision-app",
+  "private_key_id": "8cb666bf07411cf91d5ff154bb0248883b31120f",
+  "private_key": "-----BEGIN PRIVATE KEY-----\nMIIEvwIBADANBgkqhkiG9w0BAQEFAASCBKkwggSlAgEAAoIBAQDXKJvzYSyLYX1w\nYsG8R8g1YSwStKb9opkc+HGUMjv+Ml16cNakXyP+gV/20BLUQOeXErTZw/BxTS55\nd/OKOohdPOSyzJvqmdUnNmG8xYE1xOEX1DLhnzWMaEXZ5vkc4uzKBogBzJtX+pB+\n6UJFV/ZuQHCQStspJCwV0ntzwdlO0ERnkawCN9JBawOzOx0PwgmqBboe9zodMpGE\nETAnIfrTPYKpIBhqNKYsC2iokwfr35QqGfclihXz284LR/qnog9hE3BaGxAKLIyY\nP54GlqLM4B6Hf5w2M6wj+w0xOjWtV+YGlcMrBvLO53Mk4TFJ9OhHr1GMTZslwN6N\nneqN9WjzAgMBAAECggEAAIN/nYeV6dp0QlSknjFRKi8xa2fIzjhCNY8e6cNSv60y\nX0wQ1rzyDrmLFG1TABaob+AoWkUQnN/VsVEvPMzXGP0Mog9LAKqkfG/ibu0/3DiW\niANGeVO8XS15UE2tjZMdtSgvam9IrbwxML1dlc8q6Kj14GhUu8IjzT4DAUI75g0v\na5FpldEuTCdVVRmQFoe+ELX7X3DDXhrFXZN1SU0LGAkkk3ZVgIzmGCwq7AqJXdIJ\n/YlDwnm3kDXRgPTS4B5TAPQSKJ3RmMpsh/hgaU16bT/n4DNneRf+OQvTUjP/a3DF\nx3SDDvXhDZCJjp8ZtPLa+k4WCnjJzdbFK4GO3s4MbQKBgQD1HdmGUy8/m2gtFmzK\novc/gWbAHRJOPFfjc17r5vI3JKJXMRqr65u/sew7PTpw6/RA5LBlPbk+OVFLzHyt\nKenA2zzEMwzu6PEmMb5r3l0DjUhW6TitoLjHNuwdl1gJ1HMniJCCNc/Z0nhPFVrE\nqJtAHYB9+ng9ZMOYAe7RIoUClwKBgQDgtjz89PA3dO4G70T5BduSXwVTsh9H6Gs6\nHZdax7MUiy5cMf3orNBdF6+LUllZQuJy49ZKDOrTYB0SeSE0Z3HsJaI1kMwZcpoX\nYeUmZxxHTQrE/Vk82e+K3TGtLg868FWxtUaV1cktw6C0emfx7g4xi0p9C6pjw15v\nQVcEkX4EBQKBgQCnAgCM6i6eKxfO6KGVa3YE+fj1Wpl3XtwPKDN7je5orfhCaj2e\n97g141dugWhJOitA79BUGrsVb145xAkKvyz6byY3FAVy3po4CNqSin5bhi7MsLki\nbAiaC4zTGKQuhmczf3PelCWbZzD7yTQAHFUzWSaML1Uvl3FBJ8f9DIUN3wKBgQCv\nJv00wor2/wqFlzzwydMTLUOOsFlXiF8EBoqyNNRuX+o77K+YDBPBbDPlacPBIrQ1\nj0e5ooXrSpB+lLIAEd2njtH35Kxh7YUUUrb1jwtovDF3yG4lU042tCEDdtJiQ3DY\nOo8RPXk5VbHO21ZoKgEgNw1RmKUwa9kQ6SI1ql5KLQKBgQCXHiv4CqvCEtPtO5qB\nmEieSqtrDbRzUKqw4hl9+XQuLIMJE7x5HgWLBAIoeAfyQXdjXBXYkk7/iQLvBE13\nUHu8WgQeVdbXwnKvs8atK7TXCMlh96QsF3c/nMrv+WH/RXmj2M3G3o177rLvDFd8\newSyuFKWjOOHVVEzHMgg25Ip8A==\n-----END PRIVATE KEY-----\n",
+  "client_email": "streamlit-sheets-access@wec-decision-app.iam.gserviceaccount.com",
+  "client_id": "107984445590392160933",
+  "auth_uri": "https://accounts.google.com/o/oauth2/auth",
+  "token_uri": "https://oauth2.googleapis.com/token",
+  "auth_provider_x509_cert_url": "https://www.googleapis.com/oauth2/v1/certs",
+  "client_x509_cert_url": "https://www.googleapis.com/robot/v1/metadata/x509/streamlit-sheets-access%40wec-decision-app.iam.gserviceaccount.com",
+  "universe_domain": "googleapis.com"
+}

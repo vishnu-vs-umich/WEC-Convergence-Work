@@ -8,6 +8,13 @@ import gspread
 from google.oauth2.service_account import Credentials
 from fpdf import FPDF
 
+import json
+from google.oauth2.service_account import Credentials
+
+creds_dict = json.loads(st.secrets["GOOGLE_SERVICE_ACCOUNT_JSON"])
+creds = Credentials.from_service_account_info(creds_dict)
+
+
 st.set_page_config(layout="wide")
 st.title("Wave Energy Converter Decision Support Tool")
 
@@ -21,7 +28,6 @@ SPREADSHEET_URL = "https://docs.google.com/spreadsheets/d/1mVOU66Ab-AlZaddRzm-6r
 
 # Load credentials and connect to Google Sheets
 def connect_to_google_sheets():
-    creds = Credentials.from_service_account_file(SERVICE_ACCOUNT_JSON, scopes=["https://www.googleapis.com/auth/spreadsheets"])
     client = gspread.authorize(creds)
     sheet = client.open_by_url(SPREADSHEET_URL).sheet1
     return sheet
