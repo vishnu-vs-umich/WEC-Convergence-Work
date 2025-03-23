@@ -1,8 +1,8 @@
 streamlit
+openai
+gspread
+oauth2client
+fpdf
 pandas
 numpy
 matplotlib
-openai
-gspread
-fpdf
-google-auth

@@ -128,6 +128,10 @@ with tab1:
     }
 
     if st.button("Run Fuzzy TOPSIS"):
+    # Validate fuzzy_scores completeness
+    if not all(len(fuzzy_scores[theme]) == len(wec_designs) for theme in themes):
+        st.error("Each theme must have fuzzy scores for all WEC designs.")
+    else:
         weights_dict = fuzzy_ahp_to_weights(comparisons, themes)
         weights = [weights_dict[t] for t in themes]
 
@@ -136,7 +140,7 @@ with tab1:
             for theme in themes
         ]).T
 
-        result_df = fuzzy_topsis(crisp_scores, weights)
+                result_df = fuzzy_topsis(crisp_scores, weights)
         st.dataframe(result_df)
 
         pdf_path = export_decision_report(result_df, "Results based on real fuzzy AHP weights and fuzzy TOPSIS.")
