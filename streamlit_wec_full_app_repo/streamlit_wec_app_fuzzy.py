@@ -43,21 +43,14 @@ def fuzzy_ahp_to_weights(comparisons, criteria):
     weights = geom_means / np.sum(geom_means)
     return dict(zip(criteria, weights))
 
-def fuzzy_topsis(fuzzy_scores, weights):
-    scores = []
-    for i in range(len(wec_designs)):
-        v = []
-        for theme in themes:
-            v.append(fuzzy_scores[theme][i])
-        scores.append(v)
-    scores = np.array(scores)
-    norm = np.sqrt(np.sum(scores ** 2, axis=0))
-    norm_scores = scores / norm
-    weighted = np.array([w * norm_scores[:, i] for i, w in enumerate(weights)]).T
+def fuzzy_topsis(crisp_scores, weights):
+    norm = np.linalg.norm(crisp_scores, axis=0)
+    norm_scores = crisp_scores / norm
+    weighted = norm_scores * weights
     ideal = np.max(weighted, axis=0)
     anti_ideal = np.min(weighted, axis=0)
-    d_pos = np.sqrt(np.sum((weighted - ideal) ** 2, axis=1))
-    d_neg = np.sqrt(np.sum((weighted - anti_ideal) ** 2, axis=1))
+    d_pos = np.linalg.norm(weighted - ideal, axis=1)
+    d_neg = np.linalg.norm(weighted - anti_ideal, axis=1)
     closeness = d_neg / (d_pos + d_neg)
     return pd.DataFrame({
         "WEC Design": wec_designs,
