@@ -72,7 +72,6 @@ def fuzzy_ahp_to_weights(comparisons, criteria):
 
 def fuzzy_topsis(crisp_scores, weights):
     norm = np.linalg.norm(crisp_scores, axis=0)
-    norm[norm == 0] = 1e-10  # prevent divide-by-zero
     norm_scores = crisp_scores / norm
     weighted = norm_scores * weights
     ideal = np.max(weighted, axis=0)
