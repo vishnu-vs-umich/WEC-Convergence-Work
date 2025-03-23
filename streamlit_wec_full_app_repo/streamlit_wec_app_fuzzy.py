@@ -1,4 +1,3 @@
-
 import streamlit as st
 import pandas as pd
 import numpy as np
@@ -8,6 +7,7 @@ import gspread
 from google.oauth2.service_account import Credentials
 from fpdf import FPDF
 import os
+import tempfile
 
 st.set_page_config(layout="wide")
 st.title("Wave Energy Converter Decision Support Tool")
@@ -19,7 +19,7 @@ wec_designs = ["Point Absorber", "OWC", "Overtopping"]
 # Google Sheets API setup
 SPREADSHEET_URL = "https://docs.google.com/spreadsheets/d/1mVOU66Ab-AlZaddRzm-6rWar3J_Nmpu69Iw_L4GTXq0/edit?gid=0"
 
-# Load credentials and connect to Google Sheets
+# Secure Google Sheets connection
 def get_google_creds():
     return Credentials.from_service_account_file(
         os.path.join(".streamlit", "google_credentials.json"),
@@ -32,7 +32,7 @@ def connect_to_google_sheets():
     sheet = client.open_by_url(SPREADSHEET_URL).sheet1
     return sheet
 
-# PDF Report Generation
+# PDF Report Generator
 class PDF(FPDF):
     def header(self):
         self.set_font("Arial", "B", 14)
@@ -67,9 +67,10 @@ def export_decision_report(df, summary, title="Fuzzy TOPSIS Results"):
     pdf.chapter_title(title)
     pdf.chapter_body(summary)
     pdf.add_table(df)
-    output_path = "/mnt/data/WEC_Decision_Report.pdf"
-    pdf.output(output_path)
-    return output_path
+    
+    tmp_file = tempfile.NamedTemporaryFile(delete=False, suffix=".pdf")
+    pdf.output(tmp_file.name)
+    return tmp_file.name
 
 # Tabs
 tab1, tab2, tab3 = st.tabs(["Fuzzy AHP + TOPSIS", "AI Score Extraction", "Live Community Feedback"])
@@ -87,8 +88,12 @@ with tab1:
     fuzzy_scores = {theme: [(2, 3, 4)] * 3 for theme in themes}
 
     if st.button("Run Fuzzy TOPSIS"):
-        result_df = pd.DataFrame({"WEC Design": wec_designs, "Closeness to Ideal": [0.52, 0.51, 0.48]})
+        result_df = pd.DataFrame({
+            "WEC Design": wec_designs,
+            "Closeness to Ideal": [0.52, 0.51, 0.48]
+        })
         st.dataframe(result_df)
+
         pdf_path = export_decision_report(result_df, "Summary of Fuzzy TOPSIS results.")
         with open(pdf_path, "rb") as f:
             st.download_button("Download PDF Report", f, file_name="WEC_Decision_Report.pdf")
@@ -100,10 +105,14 @@ with tab2:
     if st.button("Generate Fuzzy Scores with AI") and user_input:
         response = openai.ChatCompletion.create(
             model="gpt-4",
-            messages=[{"role": "user", "content": f"Extract fuzzy scores for themes: {themes}"}]
+            messages=[
+                {"role": "system", "content": "Extract fuzzy scores (triangular) for WEC designs across given themes."},
+                {"role": "user", "content": f"Extract fuzzy scores for: {themes}\nText: {user_input}"}
+            ]
         )
         raw_output = response.choices[0].message.content
-        st.text(raw_output)
+        st.markdown("### Extracted Fuzzy Scores")
+        st.code(raw_output)
 
 with tab3:
     st.header("Live Community Feedback Integration")
