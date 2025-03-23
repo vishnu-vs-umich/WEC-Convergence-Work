@@ -1,25 +1,22 @@
+
 import streamlit as st
 import pandas as pd
 import numpy as np
-import matplotlib.pyplot as plt
 import gspread
 from openai import OpenAI
 from google.oauth2.service_account import Credentials
 from fpdf import FPDF
-import os
 import tempfile
+import os
 
 st.set_page_config(layout="wide")
 st.title("Wave Energy Converter Decision Support Tool")
 
-# Define themes and WEC designs
 themes = ["Visual Impact", "Ecosystem Safety", "Maintenance", "Cultural Fit"]
 wec_designs = ["Point Absorber", "OWC", "Overtopping"]
 
-# Initialize OpenAI client
 client = OpenAI(api_key=st.secrets["OPENAI_API_KEY"])
 
-# Google Sheets API setup
 SPREADSHEET_URL = "https://docs.google.com/spreadsheets/d/1mVOU66Ab-AlZaddRzm-6rWar3J_Nmpu69Iw_L4GTXq0/edit?gid=0"
 
 def get_google_creds():
@@ -34,7 +31,46 @@ def connect_to_google_sheets():
     sheet = client.open_by_url(SPREADSHEET_URL).sheet1
     return sheet
 
-# PDF generation class
+def fuzzy_ahp_to_weights(comparisons, criteria):
+    n = len(criteria)
+    pcm = np.ones((n, n))
+    label_to_index = {name: i for i, name in enumerate(criteria)}
+    for (a, b), val in comparisons.items():
+        i, j = label_to_index[a], label_to_index[b]
+        pcm[i, j] = val
+        pcm[j, i] = 1 / val
+    geom_means = np.prod(pcm, axis=1) ** (1/n)
+    weights = geom_means / np.sum(geom_means)
+    return dict(zip(criteria, weights))
+
+def fuzzy_topsis(fuzzy_scores, weights):
+    scores = []
+    for i in range(len(wec_designs)):
+        v = []
+        for theme in themes:
+            v.append(fuzzy_scores[theme][i])
+        scores.append(v)
+
+    scores = np.array(scores)  # (n_alts, n_criteria, 3)
+
+    norm = np.sqrt(np.sum(scores ** 2, axis=0))
+    norm_scores = scores / norm
+
+    weighted = np.array([w * norm_scores[:, i] for i, w in enumerate(weights)]).T
+
+    ideal = np.max(weighted, axis=0)
+    anti_ideal = np.min(weighted, axis=0)
+
+    d_pos = np.sqrt(np.sum((weighted - ideal) ** 2, axis=1))
+    d_neg = np.sqrt(np.sum((weighted - anti_ideal) ** 2, axis=1))
+
+    closeness = d_neg / (d_pos + d_neg)
+
+    return pd.DataFrame({
+        "WEC Design": wec_designs,
+        "Closeness to Ideal": np.round(closeness, 4)
+    }).sort_values(by="Closeness to Ideal", ascending=False)
+
 class PDF(FPDF):
     def header(self):
         self.set_font("Arial", "B", 14)
@@ -69,34 +105,41 @@ def export_decision_report(df, summary, title="Fuzzy TOPSIS Results"):
     pdf.chapter_title(title)
     pdf.chapter_body(summary)
     pdf.add_table(df)
-    
     tmp_file = tempfile.NamedTemporaryFile(delete=False, suffix=".pdf")
     pdf.output(tmp_file.name)
     return tmp_file.name
 
-# Streamlit UI tabs
 tab1, tab2, tab3 = st.tabs(["Fuzzy AHP + TOPSIS", "AI Score Extraction", "Live Community Feedback"])
 
 with tab1:
     st.header("Fuzzy AHP + Fuzzy TOPSIS")
 
-    comparisons = {
-        ("Visual Impact", "Ecosystem Safety"): st.slider("Visual Impact vs Ecosystem Safety", 1, 9, 3),
-        ("Visual Impact", "Maintenance"): st.slider("Visual Impact vs Maintenance", 1, 9, 5),
-        ("Ecosystem Safety", "Maintenance"): st.slider("Ecosystem Safety vs Maintenance", 1, 9, 3)
+    comparisons = {}
+    for i in range(len(themes)):
+        for j in range(i+1, len(themes)):
+            a, b = themes[i], themes[j]
+            comparisons[(a, b)] = st.slider(f"{a} vs {b}", 1, 9, 3)
+
+    fuzzy_scores = {
+        "Visual Impact": [(2, 3, 4), (3, 4, 5), (4, 5, 6)],
+        "Ecosystem Safety": [(3, 4, 5), (2, 3, 4), (4, 5, 6)],
+        "Maintenance": [(4, 5, 6), (3, 4, 5), (2, 3, 4)],
+        "Cultural Fit": [(3, 4, 5), (4, 5, 6), (2, 3, 4)]
     }
 
-    st.header("Enter Fuzzy Scores for Each WEC Design")
-    fuzzy_scores = {theme: [(2, 3, 4)] * 3 for theme in themes}
-
     if st.button("Run Fuzzy TOPSIS"):
-        result_df = pd.DataFrame({
-            "WEC Design": wec_designs,
-            "Closeness to Ideal": [0.52, 0.51, 0.48]
-        })
+        weights_dict = fuzzy_ahp_to_weights(comparisons, themes)
+        weights = [weights_dict[t] for t in themes]
+
+        crisp_scores = np.array([
+            [(a+b+c)/3 for (a, b, c) in fuzzy_scores[theme]]
+            for theme in themes
+        ]).T
+
+        result_df = fuzzy_topsis(crisp_scores, weights)
         st.dataframe(result_df)
 
-        pdf_path = export_decision_report(result_df, "Summary of Fuzzy TOPSIS results.")
+        pdf_path = export_decision_report(result_df, "Results based on real fuzzy AHP weights and fuzzy TOPSIS.")
         with open(pdf_path, "rb") as f:
             st.download_button("Download PDF Report", f, file_name="WEC_Decision_Report.pdf")
 
