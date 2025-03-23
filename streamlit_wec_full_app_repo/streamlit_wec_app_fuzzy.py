@@ -136,7 +136,7 @@ with tab1:
         result_df = fuzzy_topsis(crisp_scores, weights)
         st.dataframe(result_df)
 
-        # SAVE TO GOOGLE SHEET - NEW TAB
+        # SAVE TO GOOGLE SHEET - NEW TAB WITH FORMATTING
         spreadsheet = gspread.authorize(get_google_creds()).open_by_url(SPREADSHEET_URL)
         try:
             sheet_results = spreadsheet.worksheet("Fuzzy Results")
@@ -145,8 +145,12 @@ with tab1:
             pass
         sheet_results = spreadsheet.add_worksheet(title="Fuzzy Results", rows="100", cols="20")
 
-        # Write fuzzy scores
-        sheet_results.update("A1", [["Theme", "WEC Design", "L", "M", "U"]])
+        # Title: Fuzzy Scores
+        sheet_results.update("A1", [["Fuzzy Scores (Theme × WEC)"]])
+        sheet_results.format("A1", {"textFormat": {"bold": True, "fontSize": 12}})
+        sheet_results.update("A2", [["Theme", "WEC Design", "L", "M", "U"]])
+        sheet_results.format("A2:E2", {"textFormat": {"bold": True}})
+
         fuzzy_rows = []
         for theme in themes:
             for i, design in enumerate(wec_designs):
@@ -154,16 +158,24 @@ with tab1:
                 fuzzy_rows.append([theme, design, L, M, U])
         sheet_results.append_rows(fuzzy_rows, value_input_option="USER_ENTERED")
 
-        # Write crisp scores
-        start_row = len(fuzzy_rows) + 3
-        sheet_results.update(f"A{start_row}", [["Theme"] + wec_designs])
+        # Title: Crisp Scores
+        start_row = len(fuzzy_rows) + 4
+        sheet_results.update(f"A{start_row}", [["Crisp Score Matrix"]])
+        sheet_results.format(f"A{start_row}", {"textFormat": {"bold": True, "fontSize": 12}})
+        sheet_results.update(f"A{start_row+1}", [["Theme"] + wec_designs])
+        sheet_results.format(f"A{start_row+1}:{chr(65+len(wec_designs))}{start_row+1}", {"textFormat": {"bold": True}})
+
         for i, theme in enumerate(themes):
             row = [theme] + list(np.round(crisp_scores[:, i], 3))
             sheet_results.append_row(row, value_input_option="USER_ENTERED")
 
-        # Write closeness results
-        start_row += len(themes) + 3
-        sheet_results.update(f"A{start_row}", [["WEC Design", "Closeness to Ideal"]])
+        # Title: Closeness to Ideal
+        start_row = start_row + len(themes) + 4
+        sheet_results.update(f"A{start_row}", [["Fuzzy TOPSIS Closeness to Ideal Ranking"]])
+        sheet_results.format(f"A{start_row}", {"textFormat": {"bold": True, "fontSize": 12}})
+        sheet_results.update(f"A{start_row+1}", [["WEC Design", "Closeness to Ideal"]])
+        sheet_results.format(f"A{start_row+1}:B{start_row+1}", {"textFormat": {"bold": True}})
+
         for _, row in result_df.iterrows():
             sheet_results.append_row([row["WEC Design"], row["Closeness to Ideal"]], value_input_option="USER_ENTERED")
 
