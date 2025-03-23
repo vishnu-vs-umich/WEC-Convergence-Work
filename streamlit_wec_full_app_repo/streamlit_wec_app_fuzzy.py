@@ -3,7 +3,7 @@ import streamlit as st
 import pandas as pd
 import numpy as np
 import gspread
-from openai import Openai
+from openai import OpenAI
 from google.oauth2.service_account import Credentials
 from fpdf import FPDF
 import tempfile
@@ -16,7 +16,7 @@ st.title("Wave Energy Converter Decision Support Tool")
 themes = ["Visual Impact", "Ecosystem Safety", "Maintenance", "Cultural Fit"]
 wec_designs = ["Point Absorber", "OWC", "Overtopping"]
 
-client = Openai(api_key=st.secrets["OPENAI_API_KEY"])
+client = OpenAI(api_key=st.secrets["OPENAI_API_KEY"])
 SPREADSHEET_URL = "https://docs.google.com/spreadsheets/d/1mVOU66Ab-AlZaddRzm-6rWar3J_Nmpu69Iw_L4GTXq0/edit?gid=0"
 
 def get_google_creds():
