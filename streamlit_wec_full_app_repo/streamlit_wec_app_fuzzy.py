@@ -26,10 +26,6 @@ def get_google_creds():
         creds_dict,
         scopes=["https://www.googleapis.com/auth/spreadsheets"]
     )
-    return Credentials.from_service_account_info(
-        st.secrets["GOOGLE_SERVICE_ACCOUNT_JSON"],
-        scopes=["https://www.googleapis.com/auth/spreadsheets"]
-    )
 
 def connect_to_google_sheets():
     client = gspread.authorize(get_google_creds())
