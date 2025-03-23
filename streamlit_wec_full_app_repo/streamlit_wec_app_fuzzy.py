@@ -18,10 +18,10 @@ wec_designs = ["Point Absorber", "OWC", "Overtopping"]
 openai.api_key = st.secrets["OPENAI_API_KEY"]
 SPREADSHEET_URL = "https://docs.google.com/spreadsheets/d/1mVOU66Ab-AlZaddRzm-6rWar3J_Nmpu69Iw_L4GTXq0/edit#gid=0"
 
-import json
-
 def get_google_creds():
-    creds_dict = json.loads(st.secrets["GOOGLE_SERVICE_ACCOUNT_JSON"])
+    creds_dict = json.loads(
+        st.secrets["GOOGLE_SERVICE_ACCOUNT_JSON"].encode().decode('unicode_escape')
+    )
     return Credentials.from_service_account_info(
         creds_dict,
         scopes=["https://www.googleapis.com/auth/spreadsheets"]
