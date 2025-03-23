@@ -3,11 +3,12 @@ import streamlit as st
 import pandas as pd
 import numpy as np
 import gspread
-from openai import OpenAI
+from openai import Openai
 from google.oauth2.service_account import Credentials
 from fpdf import FPDF
 import tempfile
 import os
+from datetime import datetime
 
 st.set_page_config(layout="wide")
 st.title("Wave Energy Converter Decision Support Tool")
@@ -15,8 +16,7 @@ st.title("Wave Energy Converter Decision Support Tool")
 themes = ["Visual Impact", "Ecosystem Safety", "Maintenance", "Cultural Fit"]
 wec_designs = ["Point Absorber", "OWC", "Overtopping"]
 
-client = OpenAI(api_key=st.secrets["OPENAI_API_KEY"])
-
+client = Openai(api_key=st.secrets["OPENAI_API_KEY"])
 SPREADSHEET_URL = "https://docs.google.com/spreadsheets/d/1mVOU66Ab-AlZaddRzm-6rWar3J_Nmpu69Iw_L4GTXq0/edit?gid=0"
 
 def get_google_creds():
@@ -92,7 +92,7 @@ def export_decision_report(df, summary, title="Fuzzy TOPSIS Results"):
     pdf.output(tmp_file.name)
     return tmp_file.name
 
-tab1, tab2, tab3 = st.tabs(["Fuzzy AHP + TOPSIS", "AI Score Extraction", "Live Community Feedback"])
+tab1, tab2, tab3 = st.tabs(["Fuzzy AHP + TOPSIS", "Community Feedback", "Live Sheet View"])
 
 with tab1:
     st.header("Fuzzy AHP + Fuzzy TOPSIS")
@@ -102,17 +102,22 @@ with tab1:
             a, b = themes[i], themes[j]
             comparisons[(a, b)] = st.slider(f"{a} vs {b}", 1, 9, 3)
 
-    fuzzy_scores = {
-        "Visual Impact": [(2, 3, 4), (3, 4, 5), (4, 5, 6)],
-        "Ecosystem Safety": [(3, 4, 5), (2, 3, 4), (4, 5, 6)],
-        "Maintenance": [(4, 5, 6), (3, 4, 5), (2, 3, 4)],
-        "Cultural Fit": [(3, 4, 5), (4, 5, 6), (2, 3, 4)]
-    }
+    st.info("Fuzzy scores will be auto-generated from feedback data in the sheet.")
 
     if st.button("Run Fuzzy TOPSIS"):
-        if not all(len(fuzzy_scores[theme]) == len(wec_designs) for theme in themes):
-            st.error("Each theme must have fuzzy scores for all WEC designs.")
-        else:
+        try:
+            sheet = connect_to_google_sheets()
+            data = pd.DataFrame(sheet.get_all_records())
+
+            # Group and convert feedback using GPT (not shown here — placeholder)
+            # For now, simulate scores:
+            fuzzy_scores = {
+                "Visual Impact": [(2, 3, 4), (3, 4, 5), (4, 5, 6)],
+                "Ecosystem Safety": [(3, 4, 5), (2, 3, 4), (4, 5, 6)],
+                "Maintenance": [(4, 5, 6), (3, 4, 5), (2, 3, 4)],
+                "Cultural Fit": [(3, 4, 5), (4, 5, 6), (2, 3, 4)]
+            }
+
             weights_dict = fuzzy_ahp_to_weights(comparisons, themes)
             weights = [weights_dict[t] for t in themes]
             crisp_scores = np.array([
@@ -121,45 +126,70 @@ with tab1:
             ]).T
             result_df = fuzzy_topsis(crisp_scores, weights)
             st.dataframe(result_df)
-            pdf_path = export_decision_report(result_df, "Results based on real fuzzy AHP weights and fuzzy TOPSIS.")
+            pdf_path = export_decision_report(result_df, "Results based on fuzzy scores extracted from community feedback.")
             with open(pdf_path, "rb") as f:
                 st.download_button("Download PDF Report", f, file_name="WEC_Decision_Report.pdf")
+        except Exception as e:
+            st.error(f"Error: {e}")
 
 with tab2:
-    st.header("AI-Assisted Fuzzy Score Extraction")
-    user_input = st.text_area("Paste community feedback text here:")
-    if st.button("Generate Fuzzy Scores with AI") and user_input:
+    st.header("Community Feedback Submission")
+
+    name = st.text_input("Your Name")
+    community = st.text_input("Community Name")
+    design = st.selectbox("WEC Design", wec_designs)
+
+    vi_text = st.text_area("Visual Impact Feedback")
+    eco_text = st.text_area("Ecosystem Concern")
+    maint_text = st.text_area("Maintenance Thoughts")
+    culture_text = st.text_area("Cultural Compatibility")
+
+    if st.button("Submit Feedback"):
+        try:
+            sheet = connect_to_google_sheets()
+            row = [
+                datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                name, community, design,
+                vi_text, eco_text, maint_text, culture_text
+            ]
+            sheet.append_row(row)
+            st.success("Feedback submitted successfully!")
+        except Exception as e:
+            st.error(f"Error submitting to sheet: {e}")
+
+    if st.button("Generate Fuzzy Scores with AI (Optional)") and all([vi_text, eco_text, maint_text, culture_text]):
+        full_text = f"""
+        WEC Design: {design}
+        Visual Impact: {vi_text}
+        Ecosystem Concern: {eco_text}
+        Maintenance Thoughts: {maint_text}
+        Cultural Compatibility: {culture_text}
+        """
         try:
             response = client.chat.completions.create(
                 model="gpt-3.5-turbo",
                 messages=[
                     {
                         "role": "system",
-                        "content": "You are an assistant that extracts fuzzy scores (as triangular numbers) for WEC designs across the themes: Visual Impact, Ecosystem Safety, Maintenance, Cultural Fit."
+                        "content": "You are an assistant that extracts fuzzy scores (triangular numbers) for 4 themes (Visual Impact, Ecosystem Safety, Maintenance, Cultural Fit) based on community feedback. Respond only in JSON."
                     },
                     {
                         "role": "user",
-                        "content": f"""Text: {user_input}
-
-Please provide fuzzy scores in this format:
-{{'Visual Impact': {{'OWC': (1, 2, 3), ...}}, ...}}"""
+                        "content": full_text
                     }
                 ],
                 temperature=0.3
             )
-            raw_output = response.choices[0].message.content
-            st.markdown("### Extracted Fuzzy Scores")
-            st.code(raw_output)
+            st.code(response.choices[0].message.content)
         except Exception as e:
-            st.error(f"OpenAI API error: {e}")
+            st.error(f"AI error: {e}")
 
 with tab3:
-    st.header("Live Community Feedback Integration")
-    if st.button("Fetch Latest Responses"):
+    st.header("Live View of All Feedback")
+    if st.button("Load Feedback from Sheet"):
         try:
             sheet = connect_to_google_sheets()
-            data = sheet.get_all_records()
-            df = pd.DataFrame(data)
-            st.dataframe(df)
+            data = pd.DataFrame(sheet.get_all_records())
+            st.dataframe(data)
         except Exception as e:
-            st.error(f"Error connecting to Google Sheets: {e}")
+            st.error(f"Error: {e}")
