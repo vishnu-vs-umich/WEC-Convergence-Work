@@ -17,7 +17,7 @@ wec_designs = ["Point Absorber", "OWC", "Overtopping"]
 
 # Google Sheets API setup
 SERVICE_ACCOUNT_JSON = "path/to/your-service-account.json"
-SPREADSHEET_URL = "https://docs.google.com/spreadsheets/d/YOUR_SHEET_ID/edit#gid=0"
+SPREADSHEET_URL = "https://docs.google.com/spreadsheets/d/1mVOU66Ab-AlZaddRzm-6rWar3J_Nmpu69Iw_L4GTXq0/edit?gid=0#gid=0"
 
 # Load credentials and connect to Google Sheets
 def connect_to_google_sheets():
