@@ -21,13 +21,11 @@ SPREADSHEET_URL = "https://docs.google.com/spreadsheets/d/1mVOU66Ab-AlZaddRzm-6r
 import json
 
 def get_google_creds():
-    creds_dict = json.loads(st.secrets["GOOGLE_SERVICE_ACCOUNT_JSON"])
-    return Credentials.from_service_account_info(
-        creds_dict,
-        scopes=["https://www.googleapis.com/auth/spreadsheets"]
+    creds_dict = json.loads(
+        st.secrets["GOOGLE_SERVICE_ACCOUNT_JSON"].encode().decode('unicode_escape')
     )
     return Credentials.from_service_account_info(
-        st.secrets["GOOGLE_SERVICE_ACCOUNT_JSON"],
+        creds_dict,
         scopes=["https://www.googleapis.com/auth/spreadsheets"]
     )
 
