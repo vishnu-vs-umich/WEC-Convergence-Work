@@ -3,7 +3,9 @@ import streamlit as st
 import pandas as pd
 import numpy as np
 import gspread
-import openai
+from openai import OpenAI
+
+client = OpenAI(api_key=st.secrets['OPENAI_API_KEY'])
 import json
 from datetime import datetime
 from google.oauth2.service_account import Credentials
@@ -15,7 +17,7 @@ themes = ["Visual Impact", "Ecosystem Concern", "Maintenance Thoughts", "Cultura
 wec_designs = ["Point Absorber", "OWC", "Overtopping"]
 
 # Google & OpenAI setup
-openai.api_key = st.secrets["OPENAI_API_KEY"]
+OpenAI.api_key = st.secrets["OPENAI_API_KEY"]
 SPREADSHEET_URL = "https://docs.google.com/spreadsheets/d/1mVOU66Ab-AlZaddRzm-6rWar3J_Nmpu69Iw_L4GTXq0/edit#gid=0"
 
 import json
@@ -42,7 +44,7 @@ Respond only with a Python tuple like: (2, 3, 4)
 Feedback: "{text}"
 """
     try:
-        response = openai.ChatCompletion.create(
+        response = client.chat.completions.create(
             model="gpt-3.5-turbo",
             messages=[
                 {"role": "system", "content": "You're an expert in qualitative-to-quantitative transformation using fuzzy logic."},
@@ -161,7 +163,7 @@ Return a JSON like:
 Feedback:
 "{general_feedback}"
 """
-                    response = openai.ChatCompletion.create(
+                    response = client.chat.completions.create(
                         model="gpt-3.5-turbo",
                         messages=[
                             {"role": "system", "content": "You extract structured values from raw feedback."},
