@@ -18,6 +18,8 @@ wec_designs = ["Point Absorber", "OWC", "Overtopping"]
 openai.api_key = st.secrets["OPENAI_API_KEY"]
 SPREADSHEET_URL = "https://docs.google.com/spreadsheets/d/1mVOU66Ab-AlZaddRzm-6rWar3J_Nmpu69Iw_L4GTXq0/edit#gid=0"
 
+import json
+
 def get_google_creds():
     creds_dict = json.loads(
         st.secrets["GOOGLE_SERVICE_ACCOUNT_JSON"].encode().decode('unicode_escape')
@@ -68,6 +70,7 @@ def fuzzy_ahp_to_weights(comparisons, criteria):
     weights = geom_means / np.sum(geom_means)
     return dict(zip(criteria, weights))
 
+
 def fuzzy_topsis(crisp_scores, weights):
     norm = np.linalg.norm(crisp_scores, axis=0)
     norm_scores = crisp_scores / norm
@@ -77,9 +80,22 @@ def fuzzy_topsis(crisp_scores, weights):
     d_pos = np.linalg.norm(weighted - ideal, axis=1)
     d_neg = np.linalg.norm(weighted - anti_ideal, axis=1)
     closeness = d_neg / (d_pos + d_neg)
-    return pd.DataFrame({
+
+    st.write("Weighted Matrix", weighted)
+    st.write("Ideal", ideal)
+    st.write("Anti-Ideal", anti_ideal)
+    st.write("Distances to Ideal", d_pos)
+    st.write("Distances to Anti-Ideal", d_neg)
+    st.write("Closeness", closeness)
+
+    result_df = pd.DataFrame({
         "WEC Design": wec_designs,
-        "Closeness to Ideal": np.round(closeness, 4)
+        "Closeness to Ideal": closeness
+    }).sort_values(by="Closeness to Ideal", ascending=False)
+
+    result_df["Closeness to Ideal"] = result_df["Closeness to Ideal"].round(4)
+    return result_df
+
     }).sort_values(by="Closeness to Ideal", ascending=False)
 
 tab1, tab2, tab3 = st.tabs(["Fuzzy AHP + TOPSIS", "Community Feedback", "Live Sheet View"])
