@@ -107,7 +107,7 @@ with tab2:
     if st.button("Generate Fuzzy Scores with AI") and user_input:
         try:
             response = client.chat.completions.create(
-                model="gpt-4",
+                model="gpt-4-1106-preview",
                 messages=[
                     {
                         "role": "system",
