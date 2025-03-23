@@ -1,9 +1,10 @@
+
 import streamlit as st
 import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
-import openai
 import gspread
+from openai import OpenAI
 from google.oauth2.service_account import Credentials
 from fpdf import FPDF
 import os
@@ -16,10 +17,12 @@ st.title("Wave Energy Converter Decision Support Tool")
 themes = ["Visual Impact", "Ecosystem Safety", "Maintenance", "Cultural Fit"]
 wec_designs = ["Point Absorber", "OWC", "Overtopping"]
 
+# Initialize OpenAI client
+client = OpenAI(api_key=st.secrets["OPENAI_API_KEY"])
+
 # Google Sheets API setup
 SPREADSHEET_URL = "https://docs.google.com/spreadsheets/d/1mVOU66Ab-AlZaddRzm-6rWar3J_Nmpu69Iw_L4GTXq0/edit?gid=0"
 
-# Secure Google Sheets connection
 def get_google_creds():
     return Credentials.from_service_account_file(
         os.path.join(".streamlit", "google_credentials.json"),
@@ -32,7 +35,7 @@ def connect_to_google_sheets():
     sheet = client.open_by_url(SPREADSHEET_URL).sheet1
     return sheet
 
-# PDF Report Generator
+# PDF generation class
 class PDF(FPDF):
     def header(self):
         self.set_font("Arial", "B", 14)
@@ -72,7 +75,7 @@ def export_decision_report(df, summary, title="Fuzzy TOPSIS Results"):
     pdf.output(tmp_file.name)
     return tmp_file.name
 
-# Tabs
+# Streamlit UI tabs
 tab1, tab2, tab3 = st.tabs(["Fuzzy AHP + TOPSIS", "AI Score Extraction", "Live Community Feedback"])
 
 with tab1:
@@ -103,16 +106,31 @@ with tab2:
 
     user_input = st.text_area("Paste community feedback text here:")
     if st.button("Generate Fuzzy Scores with AI") and user_input:
-        response = openai.ChatCompletion.create(
-            model="gpt-4",
-            messages=[
-                {"role": "system", "content": "Extract fuzzy scores (triangular) for WEC designs across given themes."},
-                {"role": "user", "content": f"Extract fuzzy scores for: {themes}\nText: {user_input}"}
-            ]
-        )
-        raw_output = response.choices[0].message.content
-        st.markdown("### Extracted Fuzzy Scores")
-        st.code(raw_output)
+        try:
+            response = client.chat.completions.create(
+                model="gpt-4",
+                messages=[
+                    {
+                        "role": "system",
+                        "content": "You are an assistant that extracts fuzzy scores (as triangular numbers) for WEC designs across the themes: Visual Impact, Ecosystem Safety, Maintenance, Cultural Fit."
+                    },
+                    {
+                        "role": "user",
+                        "content": f"Text: {user_input}
+
+Please provide fuzzy scores in this format:
+{{'Visual Impact': {{'OWC': (1, 2, 3), ...}}, ...}}"
+                    }
+                ],
+                temperature=0.3
+            )
+
+            raw_output = response.choices[0].message.content
+            st.markdown("### Extracted Fuzzy Scores")
+            st.code(raw_output)
+
+        except Exception as e:
+            st.error(f"OpenAI API error: {e}")
 
 with tab3:
     st.header("Live Community Feedback Integration")
