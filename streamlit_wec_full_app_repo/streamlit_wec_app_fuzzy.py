@@ -7,13 +7,7 @@ import openai
 import gspread
 from google.oauth2.service_account import Credentials
 from fpdf import FPDF
-
-import json
-from google.oauth2.service_account import Credentials
-
-creds_dict = json.loads(st.secrets["GOOGLE_SERVICE_ACCOUNT_JSON"])
-creds = Credentials.from_service_account_info(creds_dict)
-
+import os
 
 st.set_page_config(layout="wide")
 st.title("Wave Energy Converter Decision Support Tool")
@@ -23,11 +17,17 @@ themes = ["Visual Impact", "Ecosystem Safety", "Maintenance", "Cultural Fit"]
 wec_designs = ["Point Absorber", "OWC", "Overtopping"]
 
 # Google Sheets API setup
-SERVICE_ACCOUNT_JSON = "path/to/your-service-account.json"
-SPREADSHEET_URL = "https://docs.google.com/spreadsheets/d/1mVOU66Ab-AlZaddRzm-6rWar3J_Nmpu69Iw_L4GTXq0/edit?gid=0#gid=0"
+SPREADSHEET_URL = "https://docs.google.com/spreadsheets/d/1mVOU66Ab-AlZaddRzm-6rWar3J_Nmpu69Iw_L4GTXq0/edit?gid=0"
 
 # Load credentials and connect to Google Sheets
+def get_google_creds():
+    return Credentials.from_service_account_file(
+        os.path.join(".streamlit", "google_credentials.json"),
+        scopes=["https://www.googleapis.com/auth/spreadsheets"]
+    )
+
 def connect_to_google_sheets():
+    creds = get_google_creds()
     client = gspread.authorize(creds)
     sheet = client.open_by_url(SPREADSHEET_URL).sheet1
     return sheet
@@ -115,4 +115,3 @@ with tab3:
             st.dataframe(df)
         except Exception as e:
             st.error(f"Error connecting to Google Sheets: {e}")
-    
