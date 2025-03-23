@@ -136,6 +136,38 @@ with tab1:
         result_df = fuzzy_topsis(crisp_scores, weights)
         st.dataframe(result_df)
 
+        # SAVE TO GOOGLE SHEET - NEW TAB
+        spreadsheet = gspread.authorize(get_google_creds()).open_by_url(SPREADSHEET_URL)
+        try:
+            sheet_results = spreadsheet.worksheet("Fuzzy Results")
+            spreadsheet.del_worksheet(sheet_results)
+        except:
+            pass
+        sheet_results = spreadsheet.add_worksheet(title="Fuzzy Results", rows="100", cols="20")
+
+        # Write fuzzy scores
+        sheet_results.update("A1", [["Theme", "WEC Design", "L", "M", "U"]])
+        fuzzy_rows = []
+        for theme in themes:
+            for i, design in enumerate(wec_designs):
+                L, M, U = fuzzy_scores[theme][i]
+                fuzzy_rows.append([theme, design, L, M, U])
+        sheet_results.append_rows(fuzzy_rows, value_input_option="USER_ENTERED")
+
+        # Write crisp scores
+        start_row = len(fuzzy_rows) + 3
+        sheet_results.update(f"A{start_row}", [["Theme"] + wec_designs])
+        for i, theme in enumerate(themes):
+            row = [theme] + list(np.round(crisp_scores[:, i], 3))
+            sheet_results.append_row(row, value_input_option="USER_ENTERED")
+
+        # Write closeness results
+        start_row += len(themes) + 3
+        sheet_results.update(f"A{start_row}", [["WEC Design", "Closeness to Ideal"]])
+        for _, row in result_df.iterrows():
+            sheet_results.append_row([row["WEC Design"], row["Closeness to Ideal"]], value_input_option="USER_ENTERED")
+
+
 with tab2:
     st.header("Submit Community Feedback")
 
