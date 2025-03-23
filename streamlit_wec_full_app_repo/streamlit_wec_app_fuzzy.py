@@ -1,4 +1,3 @@
-
 import streamlit as st
 import pandas as pd
 import numpy as np
@@ -116,10 +115,10 @@ with tab2:
                     },
                     {
                         "role": "user",
-                        "content": f"Text: {user_input}
+                        "content": f"""Text: {user_input}
 
 Please provide fuzzy scores in this format:
-{{'Visual Impact': {{'OWC': (1, 2, 3), ...}}, ...}}"
+{{'Visual Impact': {{'OWC': (1, 2, 3), ...}}, ...}}"""
                     }
                 ],
                 temperature=0.3
