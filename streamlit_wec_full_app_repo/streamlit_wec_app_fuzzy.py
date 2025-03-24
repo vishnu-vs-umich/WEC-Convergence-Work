@@ -171,7 +171,8 @@ with tab1:
         
         
         
-        # Live theme weight visualization (reduced height)
+        
+        # Live theme weight visualization (minimal version)
         st.subheader("🔍 Theme Priority Weights (Fuzzy AHP)")
         import matplotlib.pyplot as plt
         from textwrap import fill
@@ -180,21 +181,22 @@ with tab1:
         values = list(weights_dict.values())
         wrapped_labels = [fill(label, width=12) for label in labels]
 
-        fig, ax = plt.subplots(figsize=(5, 3))  # Reduced height to ~half original
+        fig, ax = plt.subplots(figsize=(2.5, 3))  # Half width and reduced height
         bars = ax.bar(wrapped_labels, values, color='skyblue')
-        ax.set_title("Theme Weights", fontsize=11)
-        ax.set_ylabel("Weight", fontsize=9)
+        ax.set_title("Theme Weights", fontsize=6)
+        ax.set_ylabel("Weight", fontsize=5)
         ax.set_ylim(0, 1)
 
-        plt.xticks(rotation=45, ha='right', fontsize=8)
-        ax.tick_params(axis='y', labelsize=8)
+        plt.xticks(rotation=45, ha='right', fontsize=4)
+        ax.tick_params(axis='y', labelsize=4)
 
         for bar, val in zip(bars, values):
             height = bar.get_height()
-            ax.text(bar.get_x() + bar.get_width() / 2, height + 0.015, f"{val:.2f}", ha='center', fontsize=8)
+            ax.text(bar.get_x() + bar.get_width() / 2, height + 0.015, f"{val:.2f}", ha='center', fontsize=4)
 
         plt.tight_layout()
         st.pyplot(fig)
+
 
         st.markdown("</div>", unsafe_allow_html=True)
 
