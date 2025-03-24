@@ -168,7 +168,9 @@ with tab1:
         weights_dict = fuzzy_ahp_to_weights(comparisons, themes)
 
         
-        # Live theme weight visualization (with wrapped labels and narrow chart)
+        
+        
+        # Live theme weight visualization (centered inside box)
         st.subheader("🔍 Theme Priority Weights (Fuzzy AHP)")
         import matplotlib.pyplot as plt
         from textwrap import fill
@@ -177,9 +179,9 @@ with tab1:
         values = list(weights_dict.values())
         wrapped_labels = [fill(label, width=12) for label in labels]
 
-        fig, ax = plt.subplots(figsize=(2.2, 3.5))  # Approx. 25% screen width
+        fig, ax = plt.subplots(figsize=(5, 5))  # Improved width, balanced height
         bars = ax.bar(wrapped_labels, values, color='skyblue')
-        ax.set_title("Theme Weights", fontsize=10)
+        ax.set_title("Theme Weights", fontsize=11)
         ax.set_ylabel("Weight", fontsize=9)
         ax.set_ylim(0, 1)
 
@@ -188,10 +190,16 @@ with tab1:
 
         for bar, val in zip(bars, values):
             height = bar.get_height()
-            ax.text(bar.get_x() + bar.get_width() / 2, height + 0.01, f"{val:.2f}", ha='center', fontsize=8)
+            ax.text(bar.get_x() + bar.get_width() / 2, height + 0.015, f"{val:.2f}", ha='center', fontsize=8)
 
         plt.tight_layout()
+
+        # Display inside a container with 650px height, center-aligned
+        st.markdown("<div style='height:650px; display:flex; justify-content:center; align-items:center;'>", unsafe_allow_html=True)
         st.pyplot(fig)
+        st.markdown("</div>", unsafe_allow_html=True)
+
+
 
 
 
@@ -316,6 +324,6 @@ with tab3:
 
 # Inject footer at bottom of app
 st.markdown(
-    "<hr style='margin-top: 50px;'><div style='text-align: center; font-size: 12px; color: gray;'>© 2025 Vishnu Vijayasankar. All rights reserved.</div>",
+    "<hr style='margin-top: 50px;'><div style='text-align: center; font-size: 20px; color: gray;'>© 2025 Vishnu Vijayasankar. All rights reserved.</div>",
     unsafe_allow_html=True
 )
