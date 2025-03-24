@@ -165,7 +165,7 @@ with tab1:
 
         weights_dict = fuzzy_ahp_to_weights(comparisons, themes)
 
-        # Live theme weight visualization
+        # Live theme weight visualization (only shown after button click)
         st.subheader("🔍 Theme Priority Weights (Fuzzy AHP)")
         import matplotlib.pyplot as plt
         labels = list(weights_dict.keys())
@@ -179,6 +179,7 @@ with tab1:
             height = bar.get_height()
             ax.text(bar.get_x() + bar.get_width() / 2, height + 0.01, f"{val:.2f}", ha='center')
         st.pyplot(fig)
+
 
         weights = [weights_dict[t] for t in themes]
         crisp_scores = np.array([
