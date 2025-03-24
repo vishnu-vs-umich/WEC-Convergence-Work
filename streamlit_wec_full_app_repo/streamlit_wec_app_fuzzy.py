@@ -196,17 +196,14 @@ with tab1:
 
         plt.tight_layout()
         
-        # Wrap the plot in a 650px tall div
-        st.markdown("<div style='height:650px;'>", unsafe_allow_html=True)
-        st.pyplot(fig)
-        st.markdown("</div>", unsafe_allow_html=True)
-
-
-        st.markdown("</div>", unsafe_allow_html=True)
-
-
-
-
+        # Use container + custom styled vertical space
+        with st.container():
+            st.markdown(
+                "<div style='height:650px; display:flex; justify-content:center; align-items:center;'>",
+                unsafe_allow_html=True
+            )
+            st.pyplot(fig)
+            st.markdown("</div>", unsafe_allow_html=True)
 
         weights = [weights_dict[t] for t in themes]
         crisp_scores = np.array([
