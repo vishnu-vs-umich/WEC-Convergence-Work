@@ -167,20 +167,32 @@ with tab1:
 
         weights_dict = fuzzy_ahp_to_weights(comparisons, themes)
 
-        # Live theme weight visualization (only shown after button click)
+        
+        # Live theme weight visualization (with wrapped labels and narrow chart)
         st.subheader("🔍 Theme Priority Weights (Fuzzy AHP)")
         import matplotlib.pyplot as plt
+        from textwrap import fill
+
         labels = list(weights_dict.keys())
         values = list(weights_dict.values())
-        fig, ax = plt.subplots(figsize=(8, 4))
-        bars = ax.bar(labels, values)
-        ax.set_title("Theme Weights from Fuzzy AHP")
-        ax.set_ylabel("Weight")
+        wrapped_labels = [fill(label, width=12) for label in labels]
+
+        fig, ax = plt.subplots(figsize=(3.5, 4))  # Approx. 25% screen width
+        bars = ax.bar(wrapped_labels, values, color='skyblue')
+        ax.set_title("Theme Weights", fontsize=10)
+        ax.set_ylabel("Weight", fontsize=9)
         ax.set_ylim(0, 1)
+
+        plt.xticks(rotation=45, ha='right', fontsize=8)
+        ax.tick_params(axis='y', labelsize=8)
+
         for bar, val in zip(bars, values):
             height = bar.get_height()
-            ax.text(bar.get_x() + bar.get_width() / 2, height + 0.01, f"{val:.2f}", ha='center')
+            ax.text(bar.get_x() + bar.get_width() / 2, height + 0.01, f"{val:.2f}", ha='center', fontsize=8)
+
+        plt.tight_layout()
         st.pyplot(fig)
+
 
 
         weights = [weights_dict[t] for t in themes]
@@ -299,6 +311,8 @@ with tab3:
         sheet = connect_to_google_sheets()
         data = pd.DataFrame(sheet.get_all_records())
         st.dataframe(data)
+
+
 
 # Inject footer at bottom of app
 st.markdown(
