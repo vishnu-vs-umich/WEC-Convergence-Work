@@ -1,0 +1,40 @@
+# ⛔ Secrets and credentials
+.streamlit/
+
+# 🧪 Python cache
+__pycache__/
+*.py[cod]
+*.pyo
+
+# 📦 Virtual environments
+venv/
+env/
+.venv/
+ENV/
+
+# 📝 Logs and temp
+*.log
+*.tmp
+*.swp
+
+# 🧪 Jupyter notebooks (optional)
+*.ipynb
+.ipynb_checkpoints/
+
+# 📄 PDF/CSV/Excel outputs (optional)
+*.pdf
+*.xlsx
+*.csv
+
+# 🔄 OS/system files
+.DS_Store
+Thumbs.db
+
+# 🚀 PyCharm or VS Code project files (optional)
+.idea/
+.vscode/
+
+# 📦 Python package files
+*.egg-info/
+dist/
+build/
