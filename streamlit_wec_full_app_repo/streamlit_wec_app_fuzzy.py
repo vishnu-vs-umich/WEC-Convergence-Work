@@ -172,7 +172,7 @@ with tab1:
         
         
         
-        # Live theme weight visualization (minimal version)
+        # Live theme weight visualization (minimal + visually balanced)
         st.subheader("🔍 Theme Priority Weights (Fuzzy AHP)")
         import matplotlib.pyplot as plt
         from textwrap import fill
@@ -181,29 +181,26 @@ with tab1:
         values = list(weights_dict.values())
         wrapped_labels = [fill(label, width=12) for label in labels]
 
-        fig, ax = plt.subplots(figsize=(2.5, 3))  # Half width and reduced height
+        fig, ax = plt.subplots(figsize=(3.5, 2.5))  # Control plot size visually
         bars = ax.bar(wrapped_labels, values, color='skyblue')
-        ax.set_title("Theme Weights", fontsize=6)
-        ax.set_ylabel("Weight", fontsize=5)
+        ax.set_title("Theme Weights", fontsize=8)
+        ax.set_ylabel("Weight", fontsize=6)
         ax.set_ylim(0, 1)
 
-        plt.xticks(rotation=45, ha='right', fontsize=4)
-        ax.tick_params(axis='y', labelsize=4)
+        plt.xticks(rotation=45, ha='right', fontsize=6)
+        ax.tick_params(axis='y', labelsize=6)
 
         for bar, val in zip(bars, values):
             height = bar.get_height()
-            ax.text(bar.get_x() + bar.get_width() / 2, height + 0.015, f"{val:.2f}", ha='center', fontsize=4)
+            ax.text(bar.get_x() + bar.get_width() / 2, height + 0.01, f"{val:.2f}", ha='center', fontsize=5)
 
         plt.tight_layout()
-        
-        # Use container + custom styled vertical space
-        with st.container():
-            st.markdown(
-                "<div style='height:650px; display:flex; justify-content:center; align-items:center;'>",
-                unsafe_allow_html=True
-            )
+
+        # Use Streamlit layout (column) to center it
+        col1, col2, col3 = st.columns([1, 2, 1])
+        with col2:
             st.pyplot(fig)
-            st.markdown("</div>", unsafe_allow_html=True)
+
 
         weights = [weights_dict[t] for t in themes]
         crisp_scores = np.array([
