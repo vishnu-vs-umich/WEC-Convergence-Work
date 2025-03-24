@@ -47,12 +47,12 @@ Feedback: "{text}"
 """
     try:
         response = client.chat.completions.create(
-            model="gpt-3.5-turbo",
+            model="gpt-4",
             messages=[
                 {"role": "system", "content": "You're an expert in qualitative-to-quantitative transformation using fuzzy logic."},
                 {"role": "user", "content": prompt}
             ],
-            temperature=0.2
+            temperature=0.0
         )
         content = response.choices[0].message.content.strip()
         score = eval(content)
@@ -60,7 +60,8 @@ Feedback: "{text}"
             return score
     except:
         pass
-    return (2, 3, 4)  # fallback default
+    st.warning("⚠️ No valid fuzzy score returned for this feedback. Skipping score calculation.")
+    return None
 
 
 def map_to_fuzzy_scale(value):
@@ -135,7 +136,51 @@ with tab1:
             a, b = themes[i], themes[j]
             comparisons[(a, b)] = st.slider(f"{a} vs {b}", 1, 9, 3)
 
-    if st.button("Run Fuzzy TOPSIS"):
+    
+    # Calculate crisp pairwise comparison matrix and CR
+    def calculate_crisp_pcm(comparisons, criteria):
+        n = len(criteria)
+        pcm = np.ones((n, n))
+        idx = {name: i for i, name in enumerate(criteria)}
+        for (a, b), val in comparisons.items():
+            i, j = idx[a], idx[b]
+            pcm[i, j] = val
+            pcm[j, i] = 1 / val
+        return pcm
+
+    def check_consistency(pcm):
+        n = pcm.shape[0]
+        eigvals, _ = np.linalg.eig(pcm)
+        lambda_max = np.max(np.real(eigvals))
+        ci = (lambda_max - n) / (n - 1)
+        RI_dict = {1: 0.0, 2: 0.0, 3: 0.58, 4: 0.90, 5: 1.12, 6: 1.24,
+                   7: 1.32, 8: 1.41, 9: 1.45, 10: 1.49}
+        RI = RI_dict.get(n, 1.49)
+        cr = ci / RI if RI != 0 else 0
+        return cr, ci, lambda_max
+
+    pcm = calculate_crisp_pcm(comparisons, themes)
+    cr, ci, lambda_max = check_consistency(pcm)
+
+    st.subheader("📏 AHP Consistency Check")
+    st.markdown(f"**Consistency Ratio (CR):** `{cr:.3f}`  <br>**Lambda Max (λₘₐₓ):** `{lambda_max:.3f}`", unsafe_allow_html=True)
+
+    if cr > 0.1:
+        st.error("⚠️ Your pairwise comparisons are inconsistent (CR > 0.10).")
+        st.markdown("""
+        **Suggestions to reduce inconsistency:**
+        - Recheck your sliders — do they contradict each other?
+        - Ensure logical transitivity: If A > B and B > C, then A > C
+        - Reduce extreme ratings unless you're confident
+        """)
+        can_run_topsis = False
+    else:
+        st.success("✅ Pairwise matrix is consistent (CR ≤ 0.10). You may run Fuzzy AHP + TOPSIS.")
+        can_run_topsis = True
+
+    run_button = st.button("Run Fuzzy TOPSIS", disabled=not can_run_topsis)
+    if run_button and can_run_topsis:
+
         sheet = connect_to_google_sheets()
         data = pd.DataFrame(sheet.get_all_records())
 
@@ -283,7 +328,7 @@ Feedback:
 "{general_feedback}"
 """
                     response = client.chat.completions.create(
-                        model="gpt-3.5-turbo",
+                        model="gpt-4",
                         messages=[
                             {"role": "system", "content": "You extract structured values from raw feedback."},
                             {"role": "user", "content": prompt}
