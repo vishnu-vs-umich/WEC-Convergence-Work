@@ -1,5 +1,7 @@
 
 import streamlit as st
+# © 2025 Vishnu Vijayasankar. All rights reserved.
+
 import pandas as pd
 import numpy as np
 import gspread
@@ -297,3 +299,9 @@ with tab3:
         sheet = connect_to_google_sheets()
         data = pd.DataFrame(sheet.get_all_records())
         st.dataframe(data)
+
+# Inject footer at bottom of app
+st.markdown(
+    "<hr style='margin-top: 50px;'><div style='text-align: center; font-size: 12px; color: gray;'>© 2025 Vishnu Vijayasankar. All rights reserved.</div>",
+    unsafe_allow_html=True
+)
