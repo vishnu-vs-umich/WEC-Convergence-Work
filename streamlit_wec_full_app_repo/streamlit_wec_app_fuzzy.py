@@ -60,17 +60,54 @@ Feedback: "{text}"
         pass
     return (2, 3, 4)  # fallback default
 
+
+def map_to_fuzzy_scale(value):
+    scale = {
+        1: (1, 1, 1),
+        2: (1, 2, 3),
+        3: (2, 3, 4),
+        4: (3, 4, 5),
+        5: (4, 5, 6),
+        6: (5, 6, 7),
+        7: (6, 7, 8),
+        8: (7, 8, 9),
+        9: (8, 9, 9)
+    }
+    return scale.get(value, (1, 1, 1))
+
 def fuzzy_ahp_to_weights(comparisons, criteria):
     n = len(criteria)
-    pcm = np.ones((n, n))
-    idx = {name: i for i, name in enumerate(criteria)}
-    for (a, b), val in comparisons.items():
-        i, j = idx[a], idx[b]
-        pcm[i, j] = val
-        pcm[j, i] = 1 / val
-    geom_means = np.prod(pcm, axis=1) ** (1/n)
-    weights = geom_means / np.sum(geom_means)
-    return dict(zip(criteria, weights))
+    L = np.ones((n, n))
+    M = np.ones((n, n))
+    U = np.ones((n, n))
+    index = {c: i for i, c in enumerate(criteria)}
+
+    for (a, b), v in comparisons.items():
+        i, j = index[a], index[b]
+        l, m, u = map_to_fuzzy_scale(v)
+        L[i, j], M[i, j], U[i, j] = l, m, u
+        L[j, i], M[j, i], U[j, i] = 1/u, 1/m, 1/l
+
+    G_L, G_M, G_U = [], [], []
+    for i in range(n):
+        gm_L = np.prod(L[i]) ** (1/n)
+        gm_M = np.prod(M[i]) ** (1/n)
+        gm_U = np.prod(U[i]) ** (1/n)
+        G_L.append(gm_L)
+        G_M.append(gm_M)
+        G_U.append(gm_U)
+
+    sum_L, sum_M, sum_U = sum(G_L), sum(G_M), sum(G_U)
+    weights = []
+    for i in range(n):
+        wl = G_L[i]/sum_U
+        wm = G_M[i]/sum_M
+        wu = G_U[i]/sum_L
+        weights.append(((wl + wm + wu)/3))
+
+    total = sum(weights)
+    return dict(zip(criteria, [w/total for w in weights]))
+
 
 def fuzzy_topsis(crisp_scores, weights):
     norm = np.linalg.norm(crisp_scores, axis=0)
@@ -127,6 +164,22 @@ with tab1:
                     fuzzy_scores[theme][i] = (2, 3, 4)  # default
 
         weights_dict = fuzzy_ahp_to_weights(comparisons, themes)
+
+        # Live theme weight visualization
+        st.subheader("🔍 Theme Priority Weights (Fuzzy AHP)")
+        import matplotlib.pyplot as plt
+        labels = list(weights_dict.keys())
+        values = list(weights_dict.values())
+        fig, ax = plt.subplots(figsize=(8, 4))
+        bars = ax.bar(labels, values)
+        ax.set_title("Theme Weights from Fuzzy AHP")
+        ax.set_ylabel("Weight")
+        ax.set_ylim(0, 1)
+        for bar, val in zip(bars, values):
+            height = bar.get_height()
+            ax.text(bar.get_x() + bar.get_width() / 2, height + 0.01, f"{val:.2f}", ha='center')
+        st.pyplot(fig)
+
         weights = [weights_dict[t] for t in themes]
         crisp_scores = np.array([
             [(a + b + c) / 3 for (a, b, c) in fuzzy_scores[theme]]
