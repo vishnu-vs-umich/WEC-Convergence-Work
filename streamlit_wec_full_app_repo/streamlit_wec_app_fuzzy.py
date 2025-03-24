@@ -177,7 +177,7 @@ with tab1:
         values = list(weights_dict.values())
         wrapped_labels = [fill(label, width=12) for label in labels]
 
-        fig, ax = plt.subplots(figsize=(3.5, 4))  # Approx. 25% screen width
+        fig, ax = plt.subplots(figsize=(2.2, 3.5))  # Approx. 25% screen width
         bars = ax.bar(wrapped_labels, values, color='skyblue')
         ax.set_title("Theme Weights", fontsize=10)
         ax.set_ylabel("Weight", fontsize=9)
