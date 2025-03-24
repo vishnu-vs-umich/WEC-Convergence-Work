@@ -323,6 +323,6 @@ with tab3:
 
 # Inject footer at bottom of app
 st.markdown(
-    "<hr style='margin-top: 50px;'><div style='text-align: center; font-size: 12px; color: gray;'>© 2025 Vishnu Vijayasankar. All rights reserved.</div>",
+    "<hr style='margin-top: 50px;'><div style='text-align: center; font-size: 18px; color: gray;'>© 2025 Vishnu Vijayasankar. All rights reserved.</div>",
     unsafe_allow_html=True
 )
