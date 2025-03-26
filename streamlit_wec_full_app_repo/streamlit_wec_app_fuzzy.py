@@ -16,13 +16,14 @@ st.set_page_config(layout="wide")
 st.title("Wave Energy Converter Decision Support Tool")
 
 themes = ["Visual Impact", "Ecosystem Concern", "Maintenance Thoughts", "Cultural Compatibility"]
-wec_designs = ["Point Absorber", "OWC", "Overtopping"]
+wec_designs = ["Point Absorber", "OWC", "Oscillating Surge Flap"]
 
 # Google & OpenAI setup
 OpenAI.api_key = st.secrets["OPENAI_API_KEY"]
 SPREADSHEET_URL = "https://docs.google.com/spreadsheets/d/1mVOU66Ab-AlZaddRzm-6rWar3J_Nmpu69Iw_L4GTXq0/edit#gid=0"
 
 import json
+from PIL import Image
 
 def get_google_creds():
     creds_dict = json.loads(
@@ -303,18 +304,21 @@ with tab1:
 with tab2:
     st.header("Submit Community Feedback")
 
-    name = st.text_input("Your Name")
-    community = st.text_input("Community Name")
-    design = st.selectbox("WEC Design", wec_designs)
-    general_feedback = st.text_area("What are your thoughts about this WEC design for your community?")
+    col1, col2 = st.columns([2, 1])  # Wider left column for form, right for image
 
-    if st.button("Submit and Analyze"):
-        if not all([name, community, design, general_feedback]):
-            st.warning("Please fill out all fields before submitting.")
-        else:
-            with st.spinner("Interpreting feedback with AI..."):
-                try:
-                    prompt = f"""
+    with col1:
+        name = st.text_input("Your Name")
+        community = st.text_input("Community Name")
+        design = st.selectbox("WEC Design", wec_designs)
+        general_feedback = st.text_area("What are your thoughts about this WEC design for your community?")
+
+        if st.button("Submit and Analyze"):
+            if not all([name, community, design, general_feedback]):
+                st.warning("Please fill out all fields before submitting.")
+            else:
+                with st.spinner("Interpreting feedback with AI..."):
+                    try:
+                        prompt = f"""
 You are an assistant that reads community feedback about a wave energy converter (WEC) and fills out these 4 themes:
 - Visual Impact Feedback
 - Ecosystem Concern
@@ -327,35 +331,45 @@ Return a JSON like:
 Feedback:
 "{general_feedback}"
 """
-                    response = client.chat.completions.create(
-                        model="gpt-4",
-                        messages=[
-                            {"role": "system", "content": "You extract structured values from raw feedback."},
-                            {"role": "user", "content": prompt}
-                        ],
-                        temperature=0.3
-                    )
-                    structured = response.choices[0].message.content.strip()
-                    result = json.loads(structured)
+                        response = client.chat.completions.create(
+                            model="gpt-4",
+                            messages=[
+                                {"role": "system", "content": "You extract structured values from raw feedback."},
+                                {"role": "user", "content": prompt}
+                            ],
+                            temperature=0.3
+                        )
+                        structured = response.choices[0].message.content.strip()
+                        result = json.loads(structured)
 
-                    row = [
-                        datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-                        name,
-                        community,
-                        design,
-                        result.get("Visual Impact Feedback", ""),
-                        result.get("Ecosystem Concern", ""),
-                        result.get("Maintenance Thoughts", ""),
-                        result.get("Cultural Compatibility", "")
-                    ]
+                        row = [
+                            datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                            name,
+                            community,
+                            design,
+                            result.get("Visual Impact Feedback", ""),
+                            result.get("Ecosystem Concern", ""),
+                            result.get("Maintenance Thoughts", ""),
+                            result.get("Cultural Compatibility", "")
+                        ]
 
-                    sheet = connect_to_google_sheets()
-                    sheet.append_row(row)
-                    st.success("Feedback saved successfully!")
-                    st.markdown("### Interpreted Themes")
-                    st.json(result)
-                except Exception as e:
-                    st.error(f"Error: {e}")
+                        sheet = connect_to_google_sheets()
+                        sheet.append_row(row)
+                        st.success("Feedback saved successfully!")
+                        st.markdown("### Interpreted Themes")
+                        st.json(result)
+                    except Exception as e:
+                        st.error(f"Error: {e}")
+
+    with col2:
+        spacer, image_col = st.columns([1, 4])  # Add left-padding using spacer column
+        with image_col:
+            try:
+                image = Image.open("WEC Classification.png")
+                st.image(image, caption="RM3, RM5, RM6 - WEC Types", width=500)
+            except:
+                st.warning("WEC Classification image not found.")
+
 
 with tab3:
     st.header("Live Feedback Sheet")
@@ -371,3 +385,5 @@ st.markdown(
     "<hr style='margin-top: 50px;'><div style='text-align: center; font-size: 18px; color: gray;'>© 2025 Vishnu Vijayasankar. All rights reserved.</div>",
     unsafe_allow_html=True
 )
+
+#streamlit run streamlit_wec_app_fuzzy.py --server.runOnSave true
