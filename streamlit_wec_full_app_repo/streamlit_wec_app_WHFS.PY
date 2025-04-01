@@ -259,8 +259,10 @@ with tabs[2]:
                 "Closeness to Ideal": closeness
             }).sort_values(by="Closeness to Ideal", ascending=False)
 
-            st.markdown("### 📊 Theme Weights")
-            st.dataframe(pd.DataFrame.from_dict(theme_weights, orient='index', columns=["Weight"]))
+            col1, col2, col3 = st.columns([2, 1, 1])
+            with col1:
+                st.markdown("### 📊 Theme Weights")
+                st.dataframe(pd.DataFrame.from_dict(theme_weights, orient='index', columns=["Weight"]))
 
             st.markdown("### 🔍 Expert Score Matrix")
             st.dataframe(exp_df.set_index("WEC"))
@@ -273,6 +275,35 @@ with tabs[2]:
             sheet.worksheet("Final Rankings").update(
                 [["WEC Design", "Closeness to Ideal"]] + result_df.values.tolist()
             )
+
+            # Theme Weight Visualization (similar to previous version)
+            st.markdown("### 📉 Visual Theme Weights (Community WHFS)")
+
+            labels = list(theme_weights.keys())
+            values = list(theme_weights.values())
+
+            from textwrap import fill
+            wrapped_labels = [fill(label, width=12) for label in labels]
+
+            fig, ax = plt.subplots(figsize=(3.5, 2.5))  # Compact size
+            bars = ax.bar(wrapped_labels, values, color='skyblue')
+            ax.set_title("Theme Weights", fontsize=8)
+            ax.set_ylabel("Weight", fontsize=6)
+            ax.set_ylim(0, 1)
+
+            plt.xticks(rotation=45, ha='right', fontsize=6)
+            ax.tick_params(axis='y', labelsize=6)
+
+            for bar, val in zip(bars, values):
+                height = bar.get_height()
+                ax.text(bar.get_x() + bar.get_width() / 2, height + 0.01, f"{val:.2f}", ha='center', fontsize=5)
+
+            plt.tight_layout()
+            # Use Streamlit layout (column) to center it
+            col1, col2, col3 = st.columns([1, 2, 1])
+            with col2:
+                st.pyplot(fig)
+
         except Exception as e:
             st.error(f"Error during ranking: {e}")
 
