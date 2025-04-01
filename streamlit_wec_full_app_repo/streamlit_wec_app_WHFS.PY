@@ -99,7 +99,24 @@ def topsis(matrix, weights):
 
 # === Streamlit UI ===
 st.set_page_config(layout="wide")
-st.title("🌊 WEC Decision Support Tool")
+st.markdown("""
+<h1 style='font-size: 40px;'>
+    <span style='color:#00274C; font-weight: bold; font-family: cursive;'>Blue</span>
+    <span style='color:#FFCB05; font-weight: bold; font-family: cursive;'>Choice </span>
+    <span style='font-weight: normal;'>: A Community Driven WEC Decision Support Tool</span>
+</h1>
+""", unsafe_allow_html=True)
+st.markdown(
+    """
+    <style>
+    .stTabs [data-baseweb="tab"] {
+        font-weight: 600;
+        padding: 10px 16px;
+    }
+    </style>
+    """,
+    unsafe_allow_html=True
+)
 tabs = st.tabs(["1️⃣ Expert Input", "2️⃣ Community Feedback", "3️⃣ Final Ranking"])
 
 # === TAB 1: EXPERT INPUT ===
@@ -113,7 +130,7 @@ with tabs[0]:
     inconsistent_themes = []
 
     for theme in THEMES:
-        st.markdown(f"**{theme}**")
+        st.markdown(f"<h4 style='margin-top:20px'>{theme}</h4>", unsafe_allow_html=True)
         pcm = np.ones((len(WEC_DESIGNS), len(WEC_DESIGNS)))
         for i in range(len(WEC_DESIGNS)):
             for j in range(i + 1, len(WEC_DESIGNS)):
@@ -258,3 +275,9 @@ with tabs[2]:
             )
         except Exception as e:
             st.error(f"Error during ranking: {e}")
+
+# Inject footer at bottom of app
+st.markdown(
+    "<hr style='margin-top: 50px;'><div style='text-align: center; font-size: 18px; color: gray;'>© 2025 Vishnu Vijayasankar. All rights reserved.</div>",
+    unsafe_allow_html=True
+)
