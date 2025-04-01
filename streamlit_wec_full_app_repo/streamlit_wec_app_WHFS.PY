@@ -12,7 +12,7 @@ import ast
 
 # === Config ===
 THEMES = ["Visual Impact", "Ecosystem Concern", "Maintenance Thoughts", "Cultural Fit"]
-WEC_DESIGNS = ["Point Absorber", "OWC", "Overtopping"]
+WEC_DESIGNS = ["Point Absorber", "OWC", "Oscillating Surge Flap"]
 SPREADSHEET_URL = "https://docs.google.com/spreadsheets/d/1mVOU66Ab-AlZaddRzm-6rWar3J_Nmpu69Iw_L4GTXq0/edit#gid=0"
 
 client = OpenAI(api_key=st.secrets["OPENAI_API_KEY"])
