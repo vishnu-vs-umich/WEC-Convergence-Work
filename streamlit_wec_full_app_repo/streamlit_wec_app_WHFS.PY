@@ -121,13 +121,26 @@ tabs = st.tabs(["1️⃣ Expert Input", "2️⃣ Community Feedback", "3️⃣ F
 
 # === TAB 1: EXPERT INPUT ===
 with tabs[0]:
-    st.subheader("Expert Scoring: Pairwise Comparisons of WEC Designs")
+    st.warning("*All fields are mandatory")
+    st.subheader("Expert Scoring: Expertise Level")
     sheet = connect_to_google_sheets()
     create_sheet_if_missing(sheet, "Expert Tab")
+    create_sheet_if_missing(sheet, "Expert Contributions Tab")
 
     expert_scores = {}
     show_warning = False
     inconsistent_themes = []
+
+    expert_name = st.text_input("👤 Your Name")
+
+    expertise_levels = {}
+    for theme in THEMES:
+        expertise_levels[theme] = st.slider(f"Rate your expertise in **{theme}** (1 = low, 5 = high)", 1, 5, 3)
+    
+    st.subheader("Expert Scoring: Pairwise Comparisons of WEC Designs")
+    st.info("Scroll to the bottom to see the Pairwise Comparison Slider Guide")
+
+    expert_pcms = {}
 
     for theme in THEMES:
         st.markdown(f"<h4 style='margin-top:20px'>{theme}</h4>", unsafe_allow_html=True)
@@ -145,15 +158,39 @@ with tabs[0]:
             inconsistent_themes.append(theme)
         
         expert_scores[theme] = ahp_weights(pcm)
+        expert_pcms[theme] = pcm
 
     # ✅ Only show button if all themes are consistent
     if not inconsistent_themes:
         if st.button("✅ Save Expert Scores"):
+            timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            sheet_ws = sheet.worksheet("Expert Contributions Tab")
+            header = ["Timestamp", "Name", "Theme", "Expertise Level"]
+            for i in range(len(WEC_DESIGNS)):
+                for j in range(i + 1, len(WEC_DESIGNS)):
+                    header.append(f"PCM_{WEC_DESIGNS[i]}_vs_{WEC_DESIGNS[j]}")
+            existing_rows = sheet_ws.get_all_values()
+            if len(existing_rows) == 0 or existing_rows == [[]]:
+                sheet_ws.append_row(header)
+
+            for theme in THEMES:
+                flat_pcm = []
+                pcm = expert_pcms[theme]
+                level = expertise_levels[theme]
+                for i in range(len(WEC_DESIGNS)):
+                    for j in range(i + 1, len(WEC_DESIGNS)):
+                        flat_pcm.append(pcm[i, j])
+
+                row = [timestamp, expert_name, theme, level] + flat_pcm      
+                sheet_ws.append_row(row)
+
+            # Optional: update intermediate expert tab for debugging
             expert_df = pd.DataFrame(expert_scores, index=WEC_DESIGNS)
             ws = sheet.worksheet("Expert Tab")
             ws.clear()
             ws.update([["WEC"] + list(expert_df.columns)] + expert_df.reset_index().values.tolist())
-            st.success("Expert scores saved successfully!")
+            
+            st.success("Expert input saved successfully!")
     else:
         st.error("❌ One or more themes have inconsistent AHP matrices. Fix them before saving.")
 
