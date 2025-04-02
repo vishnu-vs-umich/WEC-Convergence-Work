@@ -198,9 +198,9 @@ with tabs[1]:
                 """
 
                 response = client.chat.completions.create(
-                    model="gpt-4",
+                    model="gpt-4o",
                     messages=[{"role": "user", "content": prompt}],
-                    temperature=0.2
+                    temperature=0.1
                 )
                 result = json.loads(response.choices[0].message.content)
 
@@ -307,7 +307,6 @@ with tabs[2]:
         except Exception as e:
             st.error(f"Error during ranking: {e}")
 
-# Inject footer at bottom of app
 st.markdown(
     "<hr style='margin-top: 50px;'><div style='text-align: center; font-size: 18px; color: gray;'>© 2025 Vishnu Vijayasankar. All rights reserved.</div>",
     unsafe_allow_html=True
