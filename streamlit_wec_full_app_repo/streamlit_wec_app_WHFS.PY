@@ -157,6 +157,64 @@ with tabs[0]:
     else:
         st.error("❌ One or more themes have inconsistent AHP matrices. Fix them before saving.")
 
+    st.markdown("""
+    <style>
+        .comparison-guide {
+            font-size: 14px;
+            margin-top: 30px;
+        }
+        .comparison-guide table {
+            border-collapse: collapse;
+            width: 100%;
+        }
+        .comparison-guide th, .comparison-guide td {
+            border: 1px solid #ddd;
+            padding: 8px;
+            text-align: center;
+        }
+        .comparison-guide th {
+            background-color: #003366;
+            color: #FFCB05;
+        }
+        .comparison-guide caption {
+            caption-side: top;
+            text-align: left;
+            font-weight: bold;
+            font-size: 18px;
+            margin-bottom: 10px;
+        }
+        .example {
+            background-color: #f1f8ff;
+            border-left: 4px solid #1f77b4;
+            padding: 10px;
+            margin-top: 20px;
+            font-size: 14px;
+        }
+    </style>
+
+    <div class="comparison-guide">
+    <h4>Pairwise Comparison Slider Guide</h4>
+    <table>
+        <tr>
+            <th>Slider Value</th>
+            <th>Meaning</th>
+        </tr>
+        <tr><td><b>1</b></td><td>Equal importance</td></tr>
+        <tr><td><b>3</b></td><td>Moderate importance of the first over the second</td></tr>
+        <tr><td><b>5</b></td><td>Strong importance of the first over the second</td></tr>
+        <tr><td><b>7</b></td><td>Very strong importance</td></tr>
+        <tr><td><b>9</b></td><td>Extreme importance</td></tr>
+        <tr><td><b>2, 4, 6, 8</b></td><td>Intermediate levels</td></tr>
+    </table>
+    </div>
+
+    <div class="example">
+    <b>📌 Example:</b><br>
+    If you set <b>Visual Impact vs Ecosystem Concern = 5</b>, you’re saying <i>Visual Impact</i> is <b>strongly more important</b> than Ecosystem Concern.
+    </div>
+    """, unsafe_allow_html=True)
+
+
 
 # === TAB 2: COMMUNITY INPUT ===
 with tabs[1]:
@@ -166,7 +224,7 @@ with tabs[1]:
     with col1:
         name = st.text_input("Name")
         community = st.text_input("Community")
-        feedback = st.text_area("What are your thoughts about WEC in your community?")
+        feedback = st.text_area("What are your thoughts about WEC in your community? (Don't include any personal information below)")
         #wec_type = st.selectbox("Select a WEC Design", WEC_DESIGNS)
 
         if st.button("✉️ Submit Feedback"):

@@ -386,4 +386,5 @@ st.markdown(
     unsafe_allow_html=True
 )
 
+#source venv/bin/activate
 #streamlit run streamlit_wec_app_fuzzy.py --server.runOnSave true
