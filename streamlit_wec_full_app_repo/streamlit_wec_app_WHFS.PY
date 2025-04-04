@@ -11,7 +11,26 @@ from PIL import Image
 import ast
 
 # === Config ===
-THEMES = ["Visual Impact", "Ecosystem Concern", "Maintenance Thoughts", "Cultural Fit"]
+THEMES = [
+    "Scenic Value",
+    "Community Benefits",
+    "Sense of Place",
+    "Environmental Sustainability",
+    "Cost of Energy",
+    "Technical Efficiency",
+    "Technical Robustness"
+]
+
+THEME_POLARITY = {
+    "Scenic Value": "benefit",
+    "Community Benefits": "benefit",
+    "Sense of Place": "benefit",
+    "Environmental Sustainability": "benefit",
+    "Cost of Energy": "cost",
+    "Technical Efficiency": "benefit",
+    "Technical Robustness": "benefit"
+}
+
 WEC_DESIGNS = ["Point Absorber", "OWC", "Oscillating Surge Flap"]
 SPREADSHEET_URL = "https://docs.google.com/spreadsheets/d/1mVOU66Ab-AlZaddRzm-6rWar3J_Nmpu69Iw_L4GTXq0/edit#gid=0"
 
@@ -122,7 +141,6 @@ tabs = st.tabs(["1️⃣ Expert Input", "2️⃣ Community Feedback", "3️⃣ F
 # === TAB 1: EXPERT INPUT ===
 with tabs[0]:
     st.warning("*All fields are mandatory")
-    st.subheader("Expert Scoring: Expertise Level")
     sheet = connect_to_google_sheets()
     create_sheet_if_missing(sheet, "Expert Tab")
     create_sheet_if_missing(sheet, "Expert Contributions Tab")
@@ -130,12 +148,61 @@ with tabs[0]:
     expert_scores = {}
     show_warning = False
     inconsistent_themes = []
-
-    expert_name = st.text_input("👤 Your Name")
-
     expertise_levels = {}
-    for theme in THEMES:
-        expertise_levels[theme] = st.slider(f"Rate your expertise in **{theme}** (1 = low, 5 = high)", 1, 5, 3)
+    
+    st.subheader("Expert Scoring: Expertise Level")
+    col1, spacer, col2 = st.columns([3, 0.3, 2])
+
+    with col1:
+        expert_name = st.text_input("👤 Your Name")
+        st.markdown("### 📊 Self-Rated Expertise")
+        expertise_levels = {}
+        for theme in THEMES:
+            expertise_levels[theme] = st.slider(f"Rate your expertise in **{theme}** (1 = low, 5 = high)", 1, 5, 3)
+
+    with col2:
+        st.markdown("### 📘 Theme Descriptions")
+        theme_descriptions = {
+            "Scenic Value (Benefit)": "Visual harmony with the local landscape or seascape.",
+            "Community Benefits (Benefit)": "Perceived value or advantages the local community gains.",
+            "Sense of Place (Benefit)": "Alignment with local identity, history, and cultural roots.",
+            "Environmental Sustainability (Benefit)": "Long-term ecological compatibility and low environmental harm.",
+            "Cost of Energy (Cost)": "Estimated cost of energy produced.",
+            "Technical Efficiency (Benefit)": "Conversion effectiveness of wave energy to usable power.",
+            "Technical Robustness (Benefit)": "Durability and reliability under varying marine conditions."
+        }
+
+        table_html = """
+        <style>
+            table {
+                width: 100%;
+                border-collapse: collapse;
+                font-size: 14px;
+            }
+            th, td {
+                border: 1px solid #DDD;
+                padding: 8px;
+                text-align: left;
+            }
+            th {
+                background-color: #00274C;
+                color: #FFCB05;
+            }
+        </style>
+        <table>
+            <thead>
+                <tr><th>Theme</th><th>Description</th></tr>
+            </thead>
+            <tbody>
+        """
+
+        for theme, desc in theme_descriptions.items():
+            table_html += f"<tr><td>{theme}</td><td>{desc}</td></tr>"
+
+        table_html += "</tbody></table>"
+
+        st.markdown(table_html, unsafe_allow_html=True)
+
     
     st.subheader("Expert Scoring: Pairwise Comparisons of WEC Designs")
     st.info("Scroll to the bottom to see the Pairwise Comparison Slider Guide")
@@ -148,6 +215,8 @@ with tabs[0]:
         for i in range(len(WEC_DESIGNS)):
             for j in range(i + 1, len(WEC_DESIGNS)):
                 val = st.slider(f"{WEC_DESIGNS[i]} vs {WEC_DESIGNS[j]} ({theme})", 1, 9, 3)
+                if THEME_POLARITY[theme] == "cost":
+                    val = 1 / val  # Invert the scale for cost criteria
                 pcm[i, j] = val
                 pcm[j, i] = 1 / val
         cr, lam_max = calculate_consistency_index(pcm)
@@ -236,18 +305,18 @@ with tabs[0]:
             <th>Slider Value</th>
             <th>Meaning</th>
         </tr>
-        <tr><td><b>1</b></td><td>Equal importance</td></tr>
-        <tr><td><b>3</b></td><td>Moderate importance of the first over the second</td></tr>
-        <tr><td><b>5</b></td><td>Strong importance of the first over the second</td></tr>
-        <tr><td><b>7</b></td><td>Very strong importance</td></tr>
-        <tr><td><b>9</b></td><td>Extreme importance</td></tr>
-        <tr><td><b>2, 4, 6, 8</b></td><td>Intermediate levels</td></tr>
+        <tr><td><b>1</b></td><td>Both WEC designs perform equally under this theme</td></tr>
+        <tr><td><b>3</b></td><td>First design performs slightly better than the second</td></tr>
+        <tr><td><b>5</b></td><td>First design clearly performs better than the second</td></tr>
+        <tr><td><b>7</b></td><td>First design strongly outperforms the second</td></tr>
+        <tr><td><b>9</b></td><td>First design is overwhelmingly better under this theme</td></tr>
+        <tr><td><b>2, 4, 6, 8</b></td><td>Intermediate judgments between the above levels</td></tr>
     </table>
     </div>
 
     <div class="example">
     <b>📌 Example:</b><br>
-    If you set <b>Visual Impact vs Ecosystem Concern = 5</b>, you’re saying <i>Visual Impact</i> is <b>strongly more important</b> than Ecosystem Concern.
+    If you set <b>Scenic Value vs Environmental Sustainability = 5</b>, you’re saying <i>"Scenic Value"</i> is <b>clearly better than</b> than <i>"Environmental Sustainability"</i> for that particular WEC Design.
     </div>
     """, unsafe_allow_html=True)
 
@@ -297,7 +366,7 @@ with tabs[1]:
                     messages=[{"role": "user", "content": prompt}],
                     temperature=0.1
                 )
-                
+
                 import re
                 raw_response = response.choices[0].message.content.strip()
 
