@@ -291,13 +291,27 @@ with tabs[1]:
                 Community Feedback:
                 \"\"\"{feedback}\"\"\"
                 """
-
+                
                 response = client.chat.completions.create(
                     model="gpt-4o",
                     messages=[{"role": "user", "content": prompt}],
                     temperature=0.1
                 )
-                result = json.loads(response.choices[0].message.content)
+                
+                import re
+                raw_response = response.choices[0].message.content.strip()
+
+                # Remove code block markers if present
+                if raw_response.startswith("```"):
+                    raw_response = re.sub(r"^```(?:json)?", "", raw_response)
+                    raw_response = re.sub(r"```$", "", raw_response)
+                    raw_response = raw_response.strip()
+
+                try:
+                    result = json.loads(raw_response)
+                except Exception as e:
+                    st.error(f"GPT failed to return valid JSON. Error: {e}")
+                    st.stop()
 
                 def fuzzy_list_to_str(x):
                     return json.dumps(x['scores']) if isinstance(x['scores'], list) else ""
