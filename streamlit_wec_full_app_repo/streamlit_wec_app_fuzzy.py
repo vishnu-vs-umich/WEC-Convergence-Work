@@ -1,365 +1,413 @@
-
 import streamlit as st
-# © 2025 Vishnu Vijayasankar. All rights reserved.
-
 import pandas as pd
 import numpy as np
 import gspread
-from openai import OpenAI
-
-client = OpenAI(api_key=st.secrets['OPENAI_API_KEY'])
 import json
 from datetime import datetime
 from google.oauth2.service_account import Credentials
+from openai import OpenAI
+import matplotlib.pyplot as plt
+from PIL import Image
+import ast
 
-st.set_page_config(layout="wide")
-st.title("Wave Energy Converter Decision Support Tool")
+# === Config ===
+THEMES = [
+    "Scenic Value",
+    "Community Benefits",
+    "Sense of Place",
+    "Environmental Sustainability",
+    "Cost of Energy",
+    "Technical Efficiency",
+    "Technical Robustness"
+]
 
-themes = ["Visual Impact", "Ecosystem Concern", "Maintenance Thoughts", "Cultural Compatibility"]
-wec_designs = ["Point Absorber", "OWC", "Oscillating Surge Flap"]
+THEME_POLARITY = {
+    "Scenic Value": "benefit",
+    "Community Benefits": "benefit",
+    "Sense of Place": "benefit",
+    "Environmental Sustainability": "benefit",
+    "Cost of Energy": "cost",
+    "Technical Efficiency": "benefit",
+    "Technical Robustness": "benefit"
+}
 
-# Google & OpenAI setup
-OpenAI.api_key = st.secrets["OPENAI_API_KEY"]
+WEC_DESIGNS = ["Point Absorber", "OWC", "Oscillating Surge Flap"]
 SPREADSHEET_URL = "https://docs.google.com/spreadsheets/d/1mVOU66Ab-AlZaddRzm-6rWar3J_Nmpu69Iw_L4GTXq0/edit#gid=0"
 
-import json
-from PIL import Image
+client = OpenAI(api_key=st.secrets["OPENAI_API_KEY"])
 
+# === Google Sheets Connection ===
 def get_google_creds():
-    creds_dict = json.loads(
-        st.secrets["GOOGLE_SERVICE_ACCOUNT_JSON"].encode().decode('unicode_escape')
-    )
-    return Credentials.from_service_account_info(
-        creds_dict,
-        scopes=["https://www.googleapis.com/auth/spreadsheets"]
-    )
+    creds_dict = json.loads(st.secrets["GOOGLE_SERVICE_ACCOUNT_JSON"].encode().decode("unicode_escape"))
+    return Credentials.from_service_account_info(creds_dict, scopes=["https://www.googleapis.com/auth/spreadsheets"])
 
 def connect_to_google_sheets():
     client = gspread.authorize(get_google_creds())
-    return client.open_by_url(SPREADSHEET_URL).sheet1
+    return client.open_by_url(SPREADSHEET_URL)
 
-def extract_fuzzy_score_from_text(text, theme):
-    prompt = f"""
-Convert the following community feedback into a fuzzy score (triangular number) for the theme: {theme}.
+def create_sheet_if_missing(sheet, title):
+    if title not in [ws.title for ws in sheet.worksheets()]:
+        new_sheet = sheet.add_worksheet(title=title, rows="100", cols="20")
 
-Respond only with a Python tuple like: (2, 3, 4)
+        # Define dynamic headers based on tab title
+        if title == "Community Feedback Tab":
+            headers = ["Timestamp", "Name", "Community"] + THEMES
+        elif title == "Expert Tab":
+            headers = ["Theme"] + WEC_DESIGNS
+        elif title == "Final Rankings":
+            headers = ["WEC Design", "Closeness to Ideal"]
+        else:
+            headers = []
 
-Feedback: "{text}"
-"""
-    try:
-        response = client.chat.completions.create(
-            model="gpt-4",
-            messages=[
-                {"role": "system", "content": "You're an expert in qualitative-to-quantitative transformation using fuzzy logic."},
-                {"role": "user", "content": prompt}
-            ],
-            temperature=0.0
-        )
-        content = response.choices[0].message.content.strip()
-        score = eval(content)
-        if isinstance(score, tuple) and len(score) == 3:
-            return score
-    except:
-        pass
-    st.warning("⚠️ No valid fuzzy score returned for this feedback. Skipping score calculation.")
-    return None
+        if headers:
+            new_sheet.append_row(headers)
 
+# === Consistency Check ===
+def calculate_consistency_index(pcm):
+    n = len(pcm)
+    eigvals, _ = np.linalg.eig(pcm)
+    max_eigval = np.max(np.real(eigvals))
+    CI = (max_eigval - n) / (n - 1)
+    RI_dict = {1: 0.0, 2: 0.0, 3: 0.58, 4: 0.90, 5: 1.12}
+    RI = RI_dict.get(n, 1.12)
+    CR = CI / RI if RI != 0 else 0
+    return round(CR, 4), round(max_eigval, 3)
 
-def map_to_fuzzy_scale(value):
-    scale = {
-        1: (1, 1, 1),
-        2: (1, 2, 3),
-        3: (2, 3, 4),
-        4: (3, 4, 5),
-        5: (4, 5, 6),
-        6: (5, 6, 7),
-        7: (6, 7, 8),
-        8: (7, 8, 9),
-        9: (8, 9, 9)
-    }
-    return scale.get(value, (1, 1, 1))
+def ahp_weights(pcm):
+    geom_mean = np.prod(pcm, axis=1) ** (1 / len(pcm))
+    weights = geom_mean / np.sum(geom_mean)
+    return weights
 
-def fuzzy_ahp_to_weights(comparisons, criteria):
-    n = len(criteria)
-    L = np.ones((n, n))
-    M = np.ones((n, n))
-    U = np.ones((n, n))
-    index = {c: i for i, c in enumerate(criteria)}
+# === Defuzzification ===
+def defuzzify(tfn): return sum(tfn)/3
 
-    for (a, b), v in comparisons.items():
-        i, j = index[a], index[b]
-        l, m, u = map_to_fuzzy_scale(v)
-        L[i, j], M[i, j], U[i, j] = l, m, u
-        L[j, i], M[j, i], U[j, i] = 1/u, 1/m, 1/l
-
-    G_L, G_M, G_U = [], [], []
-    for i in range(n):
-        gm_L = np.prod(L[i]) ** (1/n)
-        gm_M = np.prod(M[i]) ** (1/n)
-        gm_U = np.prod(U[i]) ** (1/n)
-        G_L.append(gm_L)
-        G_M.append(gm_M)
-        G_U.append(gm_U)
-
-    sum_L, sum_M, sum_U = sum(G_L), sum(G_M), sum(G_U)
-    weights = []
-    for i in range(n):
-        wl = G_L[i]/sum_U
-        wm = G_M[i]/sum_M
-        wu = G_U[i]/sum_L
-        weights.append(((wl + wm + wu)/3))
-
-    total = sum(weights)
-    return dict(zip(criteria, [w/total for w in weights]))
-
-
-def fuzzy_topsis(crisp_scores, weights):
-    norm = np.linalg.norm(crisp_scores, axis=0)
-    norm_scores = crisp_scores / norm
-    weighted = norm_scores * weights
-    ideal = np.max(weighted, axis=0)
-    anti_ideal = np.min(weighted, axis=0)
-    d_pos = np.linalg.norm(weighted - ideal, axis=1)
-    d_neg = np.linalg.norm(weighted - anti_ideal, axis=1)
-    closeness = d_neg / (d_pos + d_neg)
-    return pd.DataFrame({
-        "WEC Design": wec_designs,
-        "Closeness to Ideal": np.round(closeness, 4)
-    }).sort_values(by="Closeness to Ideal", ascending=False)
-
-tab1, tab2, tab3 = st.tabs(["Fuzzy AHP + TOPSIS", "Community Feedback", "Live Sheet View"])
-
-with tab1:
-    st.header("Fuzzy AHP + Fuzzy TOPSIS")
-    comparisons = {}
-    for i in range(len(themes)):
-        for j in range(i + 1, len(themes)):
-            a, b = themes[i], themes[j]
-            comparisons[(a, b)] = st.slider(f"{a} vs {b}", 1, 9, 3)
-
-    
-    # Calculate crisp pairwise comparison matrix and CR
-    def calculate_crisp_pcm(comparisons, criteria):
-        n = len(criteria)
-        pcm = np.ones((n, n))
-        idx = {name: i for i, name in enumerate(criteria)}
-        for (a, b), val in comparisons.items():
-            i, j = idx[a], idx[b]
-            pcm[i, j] = val
-            pcm[j, i] = 1 / val
-        return pcm
-
-    def check_consistency(pcm):
-        n = pcm.shape[0]
-        eigvals, _ = np.linalg.eig(pcm)
-        lambda_max = np.max(np.real(eigvals))
-        ci = (lambda_max - n) / (n - 1)
-        RI_dict = {1: 0.0, 2: 0.0, 3: 0.58, 4: 0.90, 5: 1.12, 6: 1.24,
-                   7: 1.32, 8: 1.41, 9: 1.45, 10: 1.49}
-        RI = RI_dict.get(n, 1.49)
-        cr = ci / RI if RI != 0 else 0
-        return cr, ci, lambda_max
-
-    pcm = calculate_crisp_pcm(comparisons, themes)
-    cr, ci, lambda_max = check_consistency(pcm)
-
-    st.subheader("📏 AHP Consistency Check")
-    st.markdown(f"**Consistency Ratio (CR):** `{cr:.3f}`  <br>**Lambda Max (λₘₐₓ):** `{lambda_max:.3f}`", unsafe_allow_html=True)
-
-    if cr > 0.1:
-        st.error("⚠️ Your pairwise comparisons are inconsistent (CR > 0.10).")
-        st.markdown("""
-        **Suggestions to reduce inconsistency:**
-        - Recheck your sliders — do they contradict each other?
-        - Ensure logical transitivity: If A > B and B > C, then A > C
-        - Reduce extreme ratings unless you're confident
-        """)
-        can_run_topsis = False
-    else:
-        st.success("✅ Pairwise matrix is consistent (CR ≤ 0.10). You may run Fuzzy AHP + TOPSIS.")
-        can_run_topsis = True
-
-    run_button = st.button("Run Fuzzy TOPSIS", disabled=not can_run_topsis)
-    if run_button and can_run_topsis:
-
-        sheet = connect_to_google_sheets()
-        data = pd.DataFrame(sheet.get_all_records())
-
-        # Create structure: {theme: [score_per_design]}
-        fuzzy_scores = {theme: [(0, 0, 0)] * len(wec_designs) for theme in themes}
-        count_matrix = {theme: [0] * len(wec_designs) for theme in themes}
-
-        for _, row in data.iterrows():
-            design = row["WEC Design"]
-            if design not in wec_designs:
+def aggregate_whfs_scores(df):
+    theme_scores = {theme: [] for theme in THEMES}
+    for i, row in df.iterrows():
+        for theme in THEMES:
+            raw = row.get(theme, "")
+            try:
+                score_obj = ast.literal_eval(raw) if isinstance(raw, str) else raw
+                if isinstance(score_obj, list):  # WHFS is a list of TFNs
+                    for tfn in score_obj:
+                        if isinstance(tfn, list) and len(tfn) == 3:
+                            theme_scores[theme].append(defuzzify(tfn))
+            except Exception as e:
+                print(f"Error parsing fuzzy score for row {i}, theme {theme}: {e}")
                 continue
-            idx = wec_designs.index(design)
-            for theme in themes:
-                text = row.get(theme, "")
-                if text.strip():
-                    score = extract_fuzzy_score_from_text(text, theme)
-                    prev = fuzzy_scores[theme][idx]
-                    new_score = tuple(p + s for p, s in zip(prev, score))
-                    fuzzy_scores[theme][idx] = new_score
-                    count_matrix[theme][idx] += 1
+    weights = {t: np.mean(vals) for t, vals in theme_scores.items() if vals}
+    total = sum(weights.values())
+    return {k: v / total for k, v in weights.items()} if total > 0 else {}
 
-        for theme in themes:
-            for i in range(len(wec_designs)):
-                count = count_matrix[theme][i]
-                if count > 0:
-                    fuzzy_scores[theme][i] = tuple(x / count for x in fuzzy_scores[theme][i])
-                else:
-                    fuzzy_scores[theme][i] = (2, 3, 4)  # default
-
-        weights_dict = fuzzy_ahp_to_weights(comparisons, themes)
-
-        
-        
-        
-        
-        
-        # Live theme weight visualization (minimal + visually balanced)
-        st.subheader("🔍 Theme Priority Weights (Fuzzy AHP)")
-        import matplotlib.pyplot as plt
-        from textwrap import fill
-
-        labels = list(weights_dict.keys())
-        values = list(weights_dict.values())
-        wrapped_labels = [fill(label, width=12) for label in labels]
-
-        fig, ax = plt.subplots(figsize=(3.5, 2.5))  # Control plot size visually
-        bars = ax.bar(wrapped_labels, values, color='skyblue')
-        ax.set_title("Theme Weights", fontsize=8)
-        ax.set_ylabel("Weight", fontsize=6)
-        ax.set_ylim(0, 1)
-
-        plt.xticks(rotation=45, ha='right', fontsize=6)
-        ax.tick_params(axis='y', labelsize=6)
-
-        for bar, val in zip(bars, values):
-            height = bar.get_height()
-            ax.text(bar.get_x() + bar.get_width() / 2, height + 0.01, f"{val:.2f}", ha='center', fontsize=5)
-
-        plt.tight_layout()
-
-        # Use Streamlit layout (column) to center it
-        col1, col2, col3 = st.columns([1, 2, 1])
-        with col2:
-            st.pyplot(fig)
+def topsis(matrix, weights):
+    norm = np.linalg.norm(matrix, axis=0)
+    norm_matrix = matrix / norm
+    weighted = norm_matrix * weights
+    ideal = np.max(weighted, axis=0)
+    anti = np.min(weighted, axis=0)
+    d_pos = np.linalg.norm(weighted - ideal, axis=1)
+    d_neg = np.linalg.norm(weighted - anti, axis=1)
+    with np.errstate(divide='ignore', invalid='ignore'):
+        closeness = d_neg / (d_pos + d_neg)
+        closeness = np.nan_to_num(closeness, nan=0.0, posinf=0.0, neginf=0.0)
 
 
-        weights = [weights_dict[t] for t in themes]
-        crisp_scores = np.array([
-            [(a + b + c) / 3 for (a, b, c) in fuzzy_scores[theme]]
-            for theme in themes
-        ]).T
+    # ✅ Fix NaN or infinite values
+    closeness = np.nan_to_num(closeness, nan=0.0, posinf=0.0, neginf=0.0)
+    return closeness.round(4)
 
-        result_df = fuzzy_topsis(crisp_scores, weights)
-        st.dataframe(result_df)
+# === Streamlit UI ===
+st.set_page_config(layout="wide")
+st.markdown("""
+<h1 style='font-size: 40px;'>
+    <span style='color:#00274C; font-weight: bold; font-family: cursive;'>Blue</span>
+    <span style='color:#FFCB05; font-weight: bold; font-family: cursive;'>Choice </span>
+    <span style='font-weight: normal;'>: A Community Driven WEC Decision Support Tool</span>
+</h1>
+""", unsafe_allow_html=True)
+st.markdown(
+    """
+    <style>
+    .stTabs [data-baseweb="tab"] {
+        font-weight: 600;
+        padding: 10px 16px;
+    }
+    </style>
+    """,
+    unsafe_allow_html=True
+)
+tabs = st.tabs(["1️⃣ Expert Input", "2️⃣ Community Feedback", "3️⃣ Final Ranking"])
 
-        # SAVE TO GOOGLE SHEET - NEW TAB WITH FORMATTING
-        spreadsheet = gspread.authorize(get_google_creds()).open_by_url(SPREADSHEET_URL)
-        try:
-            sheet_results = spreadsheet.worksheet("Fuzzy Results")
-            spreadsheet.del_worksheet(sheet_results)
-        except:
-            pass
-        sheet_results = spreadsheet.add_worksheet(title="Fuzzy Results", rows="100", cols="20")
+# === TAB 1: EXPERT INPUT ===
+with tabs[0]:
+    st.warning("*All fields are mandatory")
+    sheet = connect_to_google_sheets()
+    create_sheet_if_missing(sheet, "Expert Tab")
+    create_sheet_if_missing(sheet, "Expert Contributions Tab")
 
-        # Title: Fuzzy Scores
-        sheet_results.update("A1", [["Fuzzy Scores (Theme × WEC)"]])
-        sheet_results.format("A1", {"textFormat": {"bold": True, "fontSize": 12}})
-        sheet_results.update("A2", [["Theme", "WEC Design", "L", "M", "U"]])
-        sheet_results.format("A2:E2", {"textFormat": {"bold": True}})
-
-        fuzzy_rows = []
-        for theme in themes:
-            for i, design in enumerate(wec_designs):
-                L, M, U = fuzzy_scores[theme][i]
-                fuzzy_rows.append([theme, design, L, M, U])
-        sheet_results.append_rows(fuzzy_rows, value_input_option="USER_ENTERED")
-
-        # Title: Crisp Scores
-        start_row = len(fuzzy_rows) + 4
-        sheet_results.update(f"A{start_row}", [["Crisp Score Matrix"]])
-        sheet_results.format(f"A{start_row}", {"textFormat": {"bold": True, "fontSize": 12}})
-        sheet_results.update(f"A{start_row+1}", [["Theme"] + wec_designs])
-        sheet_results.format(f"A{start_row+1}:{chr(65+len(wec_designs))}{start_row+1}", {"textFormat": {"bold": True}})
-
-        for i, theme in enumerate(themes):
-            row = [theme] + list(np.round(crisp_scores[:, i], 3))
-            sheet_results.append_row(row, value_input_option="USER_ENTERED")
-
-        # Title: Closeness to Ideal
-        start_row = start_row + len(themes) + 4
-        sheet_results.update(f"A{start_row}", [["Fuzzy TOPSIS Closeness to Ideal Ranking"]])
-        sheet_results.format(f"A{start_row}", {"textFormat": {"bold": True, "fontSize": 12}})
-        sheet_results.update(f"A{start_row+1}", [["WEC Design", "Closeness to Ideal"]])
-        sheet_results.format(f"A{start_row+1}:B{start_row+1}", {"textFormat": {"bold": True}})
-
-        for _, row in result_df.iterrows():
-            sheet_results.append_row([row["WEC Design"], row["Closeness to Ideal"]], value_input_option="USER_ENTERED")
-
-
-with tab2:
-    st.header("Submit Community Feedback")
-
-    col1, col2 = st.columns([2, 1])  # Wider left column for form, right for image
+    expert_scores = {}
+    show_warning = False
+    inconsistent_themes = []
+    expertise_levels = {}
+    
+    st.subheader("Expert Scoring: Expertise Level")
+    col1, spacer, col2 = st.columns([3, 0.3, 2])
 
     with col1:
-        name = st.text_input("Your Name")
-        community = st.text_input("Community Name")
-        design = st.selectbox("WEC Design", wec_designs)
-        general_feedback = st.text_area("What are your thoughts about this WEC design for your community?")
+        expert_name = st.text_input("👤 Your Name")
+        st.markdown("### 📊 Self-Rated Expertise")
+        expertise_levels = {}
+        for theme in THEMES:
+            expertise_levels[theme] = st.slider(f"Rate your expertise in **{theme}** (1 = low, 5 = high)", 1, 5, 3)
 
-        if st.button("Submit and Analyze"):
-            if not all([name, community, design, general_feedback]):
-                st.warning("Please fill out all fields before submitting.")
-            else:
-                with st.spinner("Interpreting feedback with AI..."):
-                    try:
-                        prompt = f"""
-You are an assistant that reads community feedback about a wave energy converter (WEC) and fills out these 4 themes:
-- Visual Impact Feedback
-- Ecosystem Concern
-- Maintenance Thoughts
-- Cultural Compatibility
+    with col2:
+        st.markdown("### 📘 Theme Descriptions")
+        theme_descriptions = {
+            "Scenic Value (Benefit)": "Visual harmony with the local landscape or seascape.",
+            "Community Benefits (Benefit)": "Perceived value or advantages the local community gains.",
+            "Sense of Place (Benefit)": "Alignment with local identity, history, and cultural roots.",
+            "Environmental Sustainability (Benefit)": "Long-term ecological compatibility and low environmental harm.",
+            "Cost of Energy (Cost)": "Estimated cost of energy produced.",
+            "Technical Efficiency (Benefit)": "Conversion effectiveness of wave energy to usable power.",
+            "Technical Robustness (Benefit)": "Durability and reliability under varying marine conditions."
+        }
 
-Return a JSON like:
-{{"Visual Impact Feedback": "...", "Ecosystem Concern": "...", "Maintenance Thoughts": "...", "Cultural Compatibility": "..."}}
+        table_html = """
+        <style>
+            table {
+                width: 100%;
+                border-collapse: collapse;
+                font-size: 14px;
+            }
+            th, td {
+                border: 1px solid #DDD;
+                padding: 8px;
+                text-align: left;
+            }
+            th {
+                background-color: #00274C;
+                color: #FFCB05;
+            }
+        </style>
+        <table>
+            <thead>
+                <tr><th>Theme</th><th>Description</th></tr>
+            </thead>
+            <tbody>
+        """
 
-Feedback:
-"{general_feedback}"
-"""
-                        response = client.chat.completions.create(
-                            model="gpt-4",
-                            messages=[
-                                {"role": "system", "content": "You extract structured values from raw feedback."},
-                                {"role": "user", "content": prompt}
-                            ],
-                            temperature=0.3
-                        )
-                        structured = response.choices[0].message.content.strip()
-                        result = json.loads(structured)
+        for theme, desc in theme_descriptions.items():
+            table_html += f"<tr><td>{theme}</td><td>{desc}</td></tr>"
 
-                        row = [
-                            datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-                            name,
-                            community,
-                            design,
-                            result.get("Visual Impact Feedback", ""),
-                            result.get("Ecosystem Concern", ""),
-                            result.get("Maintenance Thoughts", ""),
-                            result.get("Cultural Compatibility", "")
-                        ]
+        table_html += "</tbody></table>"
 
-                        sheet = connect_to_google_sheets()
-                        sheet.append_row(row)
-                        st.success("Feedback saved successfully!")
-                        st.markdown("### Interpreted Themes")
-                        st.json(result)
-                    except Exception as e:
-                        st.error(f"Error: {e}")
+        st.markdown(table_html, unsafe_allow_html=True)
+
+    
+    st.subheader("Expert Scoring: Pairwise Comparisons of WEC Designs")
+    st.info("Scroll to the bottom to see the Pairwise Comparison Slider Guide")
+
+    expert_pcms = {}
+
+    for theme in THEMES:
+        st.markdown(f"<h4 style='margin-top:20px'>{theme}</h4>", unsafe_allow_html=True)
+        pcm = np.ones((len(WEC_DESIGNS), len(WEC_DESIGNS)))
+        for i in range(len(WEC_DESIGNS)):
+            for j in range(i + 1, len(WEC_DESIGNS)):
+                val = st.slider(f"{WEC_DESIGNS[i]} vs {WEC_DESIGNS[j]} ({theme})", 1, 9, 3)
+                if THEME_POLARITY[theme] == "cost":
+                    val = 1 / val  # Invert the scale for cost criteria
+                pcm[i, j] = val
+                pcm[j, i] = 1 / val
+        cr, lam_max = calculate_consistency_index(pcm)
+        st.markdown(f"λₘₐₓ = {lam_max:.3f}, CI = ..., **CR = {cr:.3f}**")
+        
+        if cr > 0.1:
+            st.warning(f"⚠️ Theme '{theme}' has inconsistent comparisons (CR > 0.1). Please revise.")
+            inconsistent_themes.append(theme)
+        
+        expert_scores[theme] = ahp_weights(pcm)
+        expert_pcms[theme] = pcm
+
+    # ✅ Only show button if all themes are consistent
+    if not inconsistent_themes:
+        if st.button("✅ Save Expert Scores"):
+            timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            sheet_ws = sheet.worksheet("Expert Contributions Tab")
+            header = ["Timestamp", "Name", "Theme", "Expertise Level"]
+            for i in range(len(WEC_DESIGNS)):
+                for j in range(i + 1, len(WEC_DESIGNS)):
+                    header.append(f"PCM_{WEC_DESIGNS[i]}_vs_{WEC_DESIGNS[j]}")
+            existing_rows = sheet_ws.get_all_values()
+            if len(existing_rows) == 0 or existing_rows == [[]]:
+                sheet_ws.append_row(header)
+
+            for theme in THEMES:
+                flat_pcm = []
+                pcm = expert_pcms[theme]
+                level = expertise_levels[theme]
+                for i in range(len(WEC_DESIGNS)):
+                    for j in range(i + 1, len(WEC_DESIGNS)):
+                        flat_pcm.append(pcm[i, j])
+
+                row = [timestamp, expert_name, theme, level] + flat_pcm      
+                sheet_ws.append_row(row)
+
+            # Optional: update intermediate expert tab for debugging
+            expert_df = pd.DataFrame(expert_scores, index=WEC_DESIGNS)
+            ws = sheet.worksheet("Expert Tab")
+            ws.clear()
+            ws.update([["WEC"] + list(expert_df.columns)] + expert_df.reset_index().values.tolist())
+            
+            st.success("Expert input saved successfully!")
+    else:
+        st.error("❌ One or more themes have inconsistent AHP matrices. Fix them before saving.")
+
+    st.markdown("""
+    <style>
+        .comparison-guide {
+            font-size: 14px;
+            margin-top: 30px;
+        }
+        .comparison-guide table {
+            border-collapse: collapse;
+            width: 100%;
+        }
+        .comparison-guide th, .comparison-guide td {
+            border: 1px solid #ddd;
+            padding: 8px;
+            text-align: center;
+        }
+        .comparison-guide th {
+            background-color: #003366;
+            color: #FFCB05;
+        }
+        .comparison-guide caption {
+            caption-side: top;
+            text-align: left;
+            font-weight: bold;
+            font-size: 18px;
+            margin-bottom: 10px;
+        }
+        .example {
+            background-color: #f1f8ff;
+            border-left: 4px solid #1f77b4;
+            padding: 10px;
+            margin-top: 20px;
+            font-size: 14px;
+        }
+    </style>
+
+    <div class="comparison-guide">
+    <h4>Pairwise Comparison Slider Guide</h4>
+    <table>
+        <tr>
+            <th>Slider Value</th>
+            <th>Meaning</th>
+        </tr>
+        <tr><td><b>1</b></td><td>Both WEC designs perform equally under this theme</td></tr>
+        <tr><td><b>3</b></td><td>First design performs slightly better than the second</td></tr>
+        <tr><td><b>5</b></td><td>First design clearly performs better than the second</td></tr>
+        <tr><td><b>7</b></td><td>First design strongly outperforms the second</td></tr>
+        <tr><td><b>9</b></td><td>First design is overwhelmingly better under this theme</td></tr>
+        <tr><td><b>2, 4, 6, 8</b></td><td>Intermediate judgments between the above levels</td></tr>
+    </table>
+    </div>
+
+    <div class="example">
+    <b>📌 Example:</b><br>
+    If you set <b>Scenic Value vs Environmental Sustainability = 5</b>, you’re saying <i>"Scenic Value"</i> is <b>clearly better than</b> than <i>"Environmental Sustainability"</i> for that particular WEC Design.
+    </div>
+    """, unsafe_allow_html=True)
+
+
+
+# === TAB 2: COMMUNITY INPUT ===
+with tabs[1]:
+    st.subheader("Community Input: General Feedback")
+    col1, col2 = st.columns([2, 1])  # Wider left column for form, right for image
+    create_sheet_if_missing(sheet, "Community Feedback Tab")
+    with col1:
+        name = st.text_input("Name")
+        community = st.text_input("Community")
+        feedback = st.text_area("What are your thoughts about WEC in your community? (Don't include any personal information below)")
+        #wec_type = st.selectbox("Select a WEC Design", WEC_DESIGNS)
+
+        if st.button("✉️ Submit Feedback"):
+            try:
+                prompt = f"""
+                You are an expert assistant in converting qualitative community feedback into Weighted Hesitant Fuzzy Scores (WHFS) for 4 themes:
+
+                {THEMES}
+
+                For each theme, return:
+                1. A short explanation (1-2 sentences)
+                2. A list of 2 to 3 triangular fuzzy numbers (TFNs), each in the format [a, b, c], where 0 ≤ a ≤ b ≤ c ≤ 9
+
+                Respond in this JSON format:
+                {{
+                "Visual Impact": {{
+                    "explanation": "May obstruct scenic views during sunrise.",
+                    "scores": [[2, 3, 4], [3, 4, 5]]
+                }},
+                "Ecosystem Concern": {{
+                    "explanation": "Might affect fish breeding areas.",
+                    "scores": [[1, 2, 3]]
+                }},
+                ...
+                }}
+
+                Community Feedback:
+                \"\"\"{feedback}\"\"\"
+                """
+                
+                response = client.chat.completions.create(
+                    model="gpt-4o",
+                    messages=[{"role": "user", "content": prompt}],
+                    temperature=0.1
+                )
+
+                import re
+                raw_response = response.choices[0].message.content.strip()
+
+                # Remove code block markers if present
+                if raw_response.startswith("```"):
+                    raw_response = re.sub(r"^```(?:json)?", "", raw_response)
+                    raw_response = re.sub(r"```$", "", raw_response)
+                    raw_response = raw_response.strip()
+
+                try:
+                    result = json.loads(raw_response)
+                except Exception as e:
+                    st.error(f"GPT failed to return valid JSON. Error: {e}")
+                    st.stop()
+
+                def fuzzy_list_to_str(x):
+                    return json.dumps(x['scores']) if isinstance(x['scores'], list) else ""
+
+                row = [
+                    datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                    name,
+                    community
+                ] + [fuzzy_list_to_str(result.get(theme)) for theme in THEMES]
+
+                
+                ws = sheet.worksheet("Community Feedback Tab")
+                ws.append_row(row)
+                st.success("Feedback saved successfully!")
+                # Show extracted themes with markdown formatting
+                st.markdown("### AI-Assited Feedback Breakdown by Theme")
+
+                for theme in THEMES:
+                    explanation = result[theme]["explanation"]
+                    scores = result[theme]["scores"]
+
+                    st.markdown(f"**{theme}**")
+                    st.markdown(f"- 📝 *Explanation:* {explanation}")
+                    st.markdown(f"- 🔢 *Fuzzy Score:* `{scores}`")
+
+            except Exception as e:
+                st.error(f"GPT failed: {e}")
 
     with col2:
         spacer, image_col = st.columns([1, 4])  # Add left-padding using spacer column
@@ -370,21 +418,74 @@ Feedback:
             except:
                 st.warning("WEC Classification image not found.")
 
+# === TAB 3: FINAL RANKING ===
+with tabs[2]:
+    st.subheader("Final WEC Ranking using WHFS-TOPSIS")
+    create_sheet_if_missing(sheet, "Final Rankings")
+    if st.button("🏁 Run Ranking"):
+        try:
+            exp_df = pd.DataFrame(sheet.worksheet("Expert Tab").get_all_records())
+            comm_df = pd.DataFrame(sheet.worksheet("Community Feedback Tab").get_all_records())
 
-with tab3:
-    st.header("Live Feedback Sheet")
-    if st.button("Refresh Sheet"):
-        sheet = connect_to_google_sheets()
-        data = pd.DataFrame(sheet.get_all_records())
-        st.dataframe(data)
+            exp_matrix = exp_df.set_index("WEC").loc[WEC_DESIGNS][THEMES].astype(float).values
+            theme_weights = aggregate_whfs_scores(comm_df)
+            weights = np.array([theme_weights[t] for t in THEMES])
 
+            closeness = topsis(exp_matrix, weights)
+            result_df = pd.DataFrame({
+                "WEC Design": WEC_DESIGNS,
+                "Closeness to Ideal": closeness
+            }).sort_values(by="Closeness to Ideal", ascending=False)
 
+            col1, col2, col3 = st.columns([2, 1, 1])
+            with col1:
+                st.markdown("### 📊 Theme Weights")
+                st.dataframe(pd.DataFrame.from_dict(theme_weights, orient='index', columns=["Weight"]))
 
-# Inject footer at bottom of app
+            st.markdown("### 🔍 Expert Score Matrix")
+            st.dataframe(exp_df.set_index("WEC"))
+
+            st.markdown("### 🏆 TOPSIS Results")
+            st.dataframe(result_df)
+
+            # Save final ranking
+            sheet.worksheet("Final Rankings").clear()
+            sheet.worksheet("Final Rankings").update(
+                [["WEC Design", "Closeness to Ideal"]] + result_df.values.tolist()
+            )
+
+            # Theme Weight Visualization (similar to previous version)
+            st.markdown("### 📉 Visual Theme Weights (Community WHFS)")
+
+            labels = list(theme_weights.keys())
+            values = list(theme_weights.values())
+
+            from textwrap import fill
+            wrapped_labels = [fill(label, width=12) for label in labels]
+
+            fig, ax = plt.subplots(figsize=(3.5, 2.5))  # Compact size
+            bars = ax.bar(wrapped_labels, values, color='skyblue')
+            ax.set_title("Theme Weights", fontsize=8)
+            ax.set_ylabel("Weight", fontsize=6)
+            ax.set_ylim(0, 1)
+
+            plt.xticks(rotation=45, ha='right', fontsize=6)
+            ax.tick_params(axis='y', labelsize=6)
+
+            for bar, val in zip(bars, values):
+                height = bar.get_height()
+                ax.text(bar.get_x() + bar.get_width() / 2, height + 0.01, f"{val:.2f}", ha='center', fontsize=5)
+
+            plt.tight_layout()
+            # Use Streamlit layout (column) to center it
+            col1, col2, col3 = st.columns([1, 2, 1])
+            with col2:
+                st.pyplot(fig)
+
+        except Exception as e:
+            st.error(f"Error during ranking: {e}")
+
 st.markdown(
     "<hr style='margin-top: 50px;'><div style='text-align: center; font-size: 18px; color: gray;'>© 2025 Vishnu Vijayasankar. All rights reserved.</div>",
     unsafe_allow_html=True
 )
-
-#source venv/bin/activate
-#streamlit run streamlit_wec_app_fuzzy.py --server.runOnSave true
