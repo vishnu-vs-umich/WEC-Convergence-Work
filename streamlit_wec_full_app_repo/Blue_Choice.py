@@ -38,7 +38,7 @@ def write_excel(sheet_name, data, mode='append'):
 st.set_page_config(layout="wide")
 
 # === Config and setup continues below ===
-WEC_DESIGNS = ["Point Absorber", "OWC", "Oscillating Surge Flap"]
+WEC_DESIGNS = ["Point Absorber", "Oscillating Water Column", "Oscillating Surge Flap"]
 
 client = OpenAI(api_key=st.secrets["OPENAI_API_KEY"])
 
@@ -252,12 +252,17 @@ with tabs[0]:
     col1, spacer, col2 = st.columns([3, 0.3, 2])
 
     with col1:
-        expert_name = st.text_input("👤 Your Name")
-        st.markdown("### 📊 Self-Rated Expertise")
-        for theme in THEMES:
-            expertise_levels[theme] = st.slider(
-                f"Rate your expertise in scoring **{theme}** (1 = low, 5 = high)", 1, 5, 3
-            )
+        expert_name = st.text_input("👤 Your Name", placeholder="Enter your name here")
+
+        if expert_name.strip() == "":
+            st.warning("Please enter your name before continuing.")
+        else:
+            st.markdown("### 📊 Self-Rated Expertise")
+            for theme in THEMES:
+                expertise_levels[theme] = st.slider(
+                    f"Rate your expertise in scoring **{theme}** (1 = low, 5 = high)", 1, 5, 3
+                )
+
 
     with col2:
         st.markdown("### 📘 Theme Descriptions")
@@ -339,10 +344,10 @@ with tabs[0]:
                         justify-content: space-between;
                         background-color: #f9f9f9;
                         padding: 6px 0;
-                        margin-bottom: -10px;
+                        margin-bottom: 10px;
                         border: 1px solid #ccc;
                         border-radius: 6px;
-                        font-size: 13px;
+                        font-size: 15px;
                         font-weight: 500;
                         color: #333;
                     '>
@@ -373,11 +378,12 @@ with tabs[0]:
                     }
 
                     val = st.select_slider(
-                        label="",
+                        label="Pairwise Comparison Slider",
                         options=scale_options,
                         value=1,
                         format_func=lambda x: f"{abs(x)} ({descriptors[x]})",
-                        key=f"{theme}_{subcriterion}_{i}_{j}"
+                        key=f"{theme}_{subcriterion}_{i}_{j}",
+                        label_visibility="collapsed"
                     )
 
                     
@@ -425,7 +431,11 @@ with tabs[0]:
             expert_pcms[(theme, subcriterion)] = pcm
 
     if not inconsistent_themes:
-        if st.button("✅ Save Expert Scores"):
+        if expert_name.strip() == "":
+            st.warning("Please enter your name before saving expert scores.")
+        elif st.button("✅ Save Expert Scores"):
+            # Proceed with saving logic
+
             timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
             sheet_name = "Expert Contributions Tab"
 
@@ -460,10 +470,63 @@ with tabs[0]:
                 combined_df = new_df
 
             # Write back to Excel
-            with pd.ExcelWriter(excel_path, engine="openpyxl", mode="a", if_sheet_exists="replace") as writer:
+            with pd.ExcelWriter(EXCEL_FILE, engine="openpyxl", mode="a", if_sheet_exists="replace") as writer:
                 combined_df.to_excel(writer, sheet_name=sheet_name, index=False)
 
             st.success("✅ Expert input saved successfully!")
+
+        # 🧮 Button to generate AHP Decision Matrix from Expert Contributions
+        with st.expander("🔧 Optional: Generate AHP Decision Matrix"):
+            st.markdown(
+                "This computes the average AHP weights across all expert inputs for each subcriterion "
+                "and saves them as a decision matrix."
+            )
+            if st.button("📥 Generate AHP Decision Matrix"):
+                try:
+                    df = pd.read_excel(EXCEL_FILE, sheet_name="Expert Contributions Tab")
+
+                    # Prepare AHP Decision Matrix: rows = WECs, columns = subcriteria
+                    decision_matrix = pd.DataFrame(index=WEC_DESIGNS)
+
+                    grouped = df.groupby(["Theme", "Subcriterion"])
+
+                    for (theme, subcriterion), group in grouped:
+                        all_weights = []
+
+                        for _, row in group.iterrows():
+                            # Extract PCM values
+                            pcm_values = row[5:].values.astype(float)
+                            pcm = np.ones((len(WEC_DESIGNS), len(WEC_DESIGNS)))
+
+                            idx = 0
+                            for i in range(len(WEC_DESIGNS)):
+                                for j in range(i + 1, len(WEC_DESIGNS)):
+                                    pcm[i, j] = pcm_values[idx]
+                                    pcm[j, i] = 1 / pcm_values[idx]
+                                    idx += 1
+
+                            weights = ahp_weights(pcm)
+                            all_weights.append(weights)
+
+                        if all_weights:
+                            avg_weights = np.mean(all_weights, axis=0)
+                            decision_matrix[f"{theme} - {subcriterion}"] = avg_weights
+
+                    # Fill missing entries with NaN or 0
+                    decision_matrix = decision_matrix.fillna(0)
+
+                    # Save to Excel
+                    with pd.ExcelWriter(EXCEL_FILE, engine="openpyxl", mode="a", if_sheet_exists="replace") as writer:
+                        decision_matrix.to_excel(writer, sheet_name="AHP Decision Matrix")
+
+                    st.success("✅ AHP Decision Matrix saved to Excel successfully!")
+
+                    st.markdown("### 🧮 AHP Decision Matrix")
+                    st.dataframe(decision_matrix.style.format("{:.3f}"))
+
+                except Exception as e:
+                    st.error(f"⚠️ Error generating AHP Decision Matrix: {e}")
+
     else:
         st.error("❌ One or more subcriteria are inconsistent. Fix them before saving.")
 
@@ -531,7 +594,7 @@ with tabs[1]:
     st.subheader("Community Input: General Feedback")
     col1, col2 = st.columns([2, 1])  # Wider left column for form, right for image
     create_sheet_if_missing(sheet, "Community Feedback Tab")
-    ensure_headers_if_missing(sheet, "Community Feedback Tab")
+    ensure_headers_if_missing("Community Feedback Tab")
 
     with col1:
         name = st.text_input("Name")
@@ -641,7 +704,7 @@ with tabs[1]:
 with tabs[2]:
     st.subheader("Final WEC Ranking using WHFS-TOPSIS")
     create_sheet_if_missing(sheet, "Final Rankings")
-    ensure_headers_if_missing(sheet, "Final Rankings")
+    ensure_headers_if_missing("Final Rankings")
     
     if st.button("🏁 Run Ranking"):
         try:
