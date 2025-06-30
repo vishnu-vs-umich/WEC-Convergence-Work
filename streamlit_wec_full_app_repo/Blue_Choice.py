@@ -1003,8 +1003,15 @@ with tabs[2]:
                     fig, ax = plt.subplots(figsize=(6, 3.5))
                     sns.boxplot(data=rank_df[wec_names], ax=ax)
                     sampled_df = rank_df.sample(n=500, random_state=42)
-                    sns.swarmplot(data=sampled_df[wec_names], ax=ax, color=".25", size=2.5)
-
+                    # Overlay stripplot with full 10,000 samples
+                    sns.stripplot(
+                        data=rank_df[wec_names],
+                        ax=ax,
+                        color=".25",
+                        size=1.5,
+                        jitter=0.25,
+                        alpha=0.3
+                    )
                     ax.set_ylabel("Rank", fontsize=9)
                     ax.set_title("Rank Stability Across 10,000 Monte Carlo Runs", fontsize=10)
                     ax.tick_params(axis='x', labelrotation=0, labelsize=7)
