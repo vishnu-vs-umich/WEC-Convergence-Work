@@ -868,7 +868,9 @@ with tabs[2]:
             result_df = pd.DataFrame({
                 "WEC Design": final_matrix.index,
                 "Closeness to Ideal": closeness
-            }).sort_values(by="Closeness to Ideal", ascending=False)
+            }).sort_values(by="Closeness to Ideal", ascending=False).reset_index(drop=True)
+
+            result_df.insert(0, "Rank", result_df.index + 1)
             st.session_state["result_df"] = result_df
 
             # --- Save Final Rankings ---
@@ -915,11 +917,11 @@ with tabs[2]:
                     ax.plot([angle, angle], [0, 0.5], color='gray', linestyle='--', linewidth=0.6, alpha=0.6)
 
                 for angle, label in zip(angles[:-1], wrapped_labels):
-                    ax.text(angle, 0.4, label, ha='center', va='center', fontsize=7, wrap=True)
+                    ax.text(angle, 0.5, label, ha='center', va='center', fontsize=7, wrap=True)
 
                 ax.set_theta_offset(np.pi / 2)
                 ax.set_theta_direction(-1)
-                ax.set_ylim(0, 0.3)
+                ax.set_ylim(0, 0.35)
                 ax.set_rlabel_position(180 / num_vars)
                 ax.tick_params(axis='y', labelsize=6)
                 ax.set_yticklabels([])
@@ -961,7 +963,44 @@ with tabs[2]:
                 # Add vertical space to roughly center-align with col1 chart
                 st.markdown("<br><br><br><br><br><br>", unsafe_allow_html=True)  # adjust number of <br> as needed
                 st.markdown("#### 🏆 TOPSIS Final Rankings")
-                st.dataframe(result_df)
+                st.dataframe(result_df.set_index("Rank"), use_container_width=True)
+
+            col1, col2 = st.columns(2)
+
+            with col1:
+                st.markdown("#### 🧮 Preliminary Theme Weights")
+                labels = [fill(label, width=15) for label in prelim_theme_weights.index]
+                values = prelim_theme_weights.values
+
+                fig, ax = plt.subplots(figsize=(3.5, 2.8))
+                bars = ax.bar(labels, values, color='skyblue')
+                ax.set_title("Preliminary Survey", fontsize=9)
+                ax.set_ylabel("Weight", fontsize=8)
+                ax.tick_params(axis='x', rotation=45, labelsize=7)
+                ax.tick_params(axis='y', labelsize=7)
+                for bar, val in zip(bars, values):
+                    ax.text(bar.get_x() + bar.get_width()/2, val + 0.01, f"{val:.2f}", ha='center', fontsize=7)
+                ax.margins(y=0.2)
+                plt.tight_layout()
+                st.pyplot(fig)
+
+            with col2:
+                st.markdown("#### 🤝 WHFS Theme Weights")
+                labels = [fill(label, width=15) for label in whfs_theme_weights.keys()]
+                values = list(whfs_theme_weights.values())
+
+                fig, ax = plt.subplots(figsize=(3.5, 2.8))
+                bars = ax.bar(labels, values, color='lightgreen')
+                ax.set_title("Community WHFS Scores", fontsize=9)
+                ax.set_ylabel("Weight", fontsize=8)
+                ax.tick_params(axis='x', rotation=45, labelsize=7)
+                ax.tick_params(axis='y', labelsize=7)
+                for bar, val in zip(bars, values):
+                    ax.text(bar.get_x() + bar.get_width()/2, val + 0.01, f"{val:.2f}", ha='center', fontsize=7)
+                ax.margins(y=0.2)
+                plt.tight_layout()
+                st.pyplot(fig)
+
             
             st.session_state["normalized_matrix"] = normalized_matrix
             st.session_state["combined_theme_weights"] = combined_theme_weights
@@ -1001,9 +1040,8 @@ with tabs[2]:
                 with col1:
                     st.markdown("#### 📦 Rank Distribution Across Simulations")
                     fig, ax = plt.subplots(figsize=(6, 3.5))
-                    sns.boxplot(data=rank_df[wec_names], ax=ax)
-                    sampled_df = rank_df.sample(n=500, random_state=42)
-                    # Overlay stripplot with full 10,000 samples
+
+                    # Plot stripplot
                     sns.stripplot(
                         data=rank_df[wec_names],
                         ax=ax,
@@ -1012,6 +1050,15 @@ with tabs[2]:
                         jitter=0.25,
                         alpha=0.3
                     )
+
+                    # Annotate with count and percentage
+                    total = len(rank_df)
+                    for i, wec in enumerate(wec_names):
+                        counts = rank_df[wec].value_counts().sort_index()
+                        for rank_val, count in counts.items():
+                            pct = 100 * count / total
+                            ax.text(i, rank_val + 0.1, f"{count} ({pct:.1f}%)", ha='center', va='bottom', fontsize=7, color='black')
+
                     ax.set_ylabel("Rank", fontsize=9)
                     ax.set_title("Rank Stability Across 10,000 Monte Carlo Runs", fontsize=10)
                     ax.tick_params(axis='x', labelrotation=0, labelsize=7)
