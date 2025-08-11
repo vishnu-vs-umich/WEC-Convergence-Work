@@ -1131,7 +1131,7 @@ with tabs[2]:
                         ax2.set_ylim(0, 100)
                         ax2.set_xlim(x[0] - width/2 - 0.1, x[-1] + width/2 + 0.1)
                         ax2.set_ylabel("Experts at level (%)", fontsize=8)
-                        ax2.set_xlabel("Themes / Criteria for WEC Evaluation", fontsize=8)
+                        ax2.set_xlabel("Themes / Criteria for WEC Evaluation", fontsize=7)
 
                         # Put labels under the right bars
                         from textwrap import fill
@@ -1158,11 +1158,11 @@ with tabs[2]:
 
                         # Legend above the plot — no overlap
                         # Legend just below the title, above the axes (no overlap)
-                        fig2.suptitle("Expertise Distribution by Theme", fontsize=8, y=0.985)
+                        fig2.suptitle("Expertise Distribution by Theme", fontsize=7, y=0.985)
 
                         ax2.legend(
                             loc="upper center",
-                            bbox_to_anchor=(0.55, 0.93),    # position in figure coords
+                            bbox_to_anchor=(0.53, 0.93),    # position in figure coords
                             bbox_transform=fig2.transFigure,
                             ncol=5, fontsize=6, frameon=True
                         )
@@ -1221,7 +1221,7 @@ with tabs[2]:
                     ax.plot([angle, angle], [0, 0.5], color='gray', linestyle='--', linewidth=0.6, alpha=0.6)
 
                 for angle, label in zip(angles[:-1], wrapped_labels):
-                    ax.text(angle, 0.5, label, ha='center', va='center', fontsize=7, wrap=True)
+                    ax.text(angle, 0.46, label, ha='center', va='center', fontsize=7, wrap=True)
 
                 ax.set_theta_offset(np.pi / 2)
                 ax.set_theta_direction(-1)
@@ -1249,6 +1249,136 @@ with tabs[2]:
 
                 cols[i].pyplot(fig)
 
+            # === Pairwise Comparison Matrices (fraction / matrix style) ===
+            st.markdown("### 🔢 Theme-wise Pairwise Comparison Matrices (Fraction Form)")
+
+            try:
+                df_ec = pd.read_excel(EXCEL_FILE, sheet_name="Expert Contributions Tab")
+                if df_ec.empty:
+                    st.info("No expert inputs yet.")
+                else:
+                    # ---------- helpers ----------
+                    from typing import Optional, Tuple
+                    from fractions import Fraction
+
+                    # Prefer classic AHP integers and their reciprocals; otherwise show a small-denominator fraction,
+                    # and only as a last resort show a short decimal.
+                    from fractions import Fraction
+
+                    def ahp_fraction_str(x: float, tol: float = 0.04, max_den: int = 9) -> str:
+                        x = float(x)
+                        if not np.isfinite(x) or x <= 0:
+                            return "–"
+
+                        # exact-ish 1, k, or 1/k first
+                        if abs(x - 1.0) <= tol:
+                            return "1"
+                        for k in range(2, 10):
+                            if abs(x - k) <= tol * k:
+                                return f"{k}"
+                        for k in range(2, 10):
+                            if abs(x - 1.0/k) <= tol / k:
+                                return f"1/{k}"
+
+                        # If >1, try formatting as the reciprocal of a small fraction (prefer k/ℓ like 7/4)
+                        if x > 1:
+                            fr_inv = Fraction(1.0 / x).limit_denominator(max_den)     # e.g., 1/x ≈ 4/7
+                            approx = fr_inv.denominator / fr_inv.numerator            # → 7/4
+                            if abs(approx - x) <= max(tol, 0.03*x):                   # accept if close
+                                return f"{fr_inv.denominator}/{fr_inv.numerator}"
+
+                        # Otherwise try direct small-denominator fraction
+                        fr = Fraction(x).limit_denominator(max_den)                   # e.g., 4/7 when x<1
+                        if fr.denominator == 1:
+                            return f"{fr.numerator}"
+                        # allow moderately larger numerators if both are smallish
+                        if fr.numerator <= 20 and fr.denominator <= 20:
+                            return f"{fr.numerator}/{fr.denominator}"
+
+                        # fallback
+                        return f"{x:.2f}"
+
+                    # Build the expected pairwise columns in stored order i<j
+                    pair_cols = []
+                    for i in range(len(WEC_DESIGNS)):
+                        for j in range(i + 1, len(WEC_DESIGNS)):
+                            pair_cols.append((i, j, f"PCM_{WEC_DESIGNS[i]}_vs_{WEC_DESIGNS[j]}"))
+
+                    def aggregate_theme_pcm(theme: str) -> Optional[Tuple[np.ndarray, np.ndarray, float]]:
+                        """Aggregate a theme’s PCM via expertise-weighted geometric mean. Return (PCM, weights, CR)."""
+                        block = df_ec[df_ec["Theme"] == theme].copy()
+                        if block.empty:
+                            return None
+
+                        n = len(WEC_DESIGNS)
+                        pcm = np.ones((n, n), dtype=float)
+
+                        # weights from expertise (scaled 1..5 → 0..1)
+                        w = (pd.to_numeric(block["Expertise Level"], errors="coerce") / 5.0).fillna(0).to_numpy()
+
+                        for i, j, col in pair_cols:
+                            if col in block.columns:
+                                vals = pd.to_numeric(block[col], errors="coerce").to_numpy()
+                                m = np.isfinite(vals) & (vals > 0) & (w > 0)
+                                if m.any():
+                                    gm = np.exp(np.sum(w[m] * np.log(vals[m])) / np.sum(w[m]))
+                                else:
+                                    gm = 1.0
+                            else:
+                                gm = 1.0
+                            pcm[i, j] = gm
+                            pcm[j, i] = 1.0 / gm
+
+                        w_theme = ahp_weights(pcm)
+                        cr, _, _ = calculate_consistency_index(pcm)
+                        return pcm, w_theme, cr
+
+                    def pcm_to_html(pcm: np.ndarray) -> str:
+                        headers = "".join(f"<th>{name}</th>" for name in WEC_DESIGNS)
+                        body_rows = []
+                        for i, rname in enumerate(WEC_DESIGNS):
+                            cells = "".join(f"<td>{ahp_fraction_str(pcm[i, j])}</td>" for j in range(len(WEC_DESIGNS)))
+                            body_rows.append(f"<tr><th>{rname}</th>{cells}</tr>")
+
+                        css = """
+                        <style>
+                        table.ahp-matrix { border-collapse: collapse; margin: 6px 0; font-size: 14px; }
+                        table.ahp-matrix th, table.ahp-matrix td {
+                            border: 1px solid #999; padding: 6px 10px; text-align: center; white-space: nowrap;
+                        }
+                        table.ahp-matrix thead th { background: #f7f7f7; }
+                        table.ahp-matrix caption { caption-side: top; text-align: left; font-weight: 600; margin-bottom: 6px; }
+                        </style>
+                        """
+                        html = f"""
+                        {css}
+                        <div style="overflow-x:auto;">
+                        <table class="ahp-matrix">
+                            <thead><tr><th></th>{headers}</tr></thead>
+                            <tbody>
+                            {''.join(body_rows)}
+                            </tbody>
+                        </table>
+                        </div>
+                        """
+                        return html
+
+                    # ---------- render each theme ----------
+                    for theme in THEMES:
+                        out = aggregate_theme_pcm(theme)
+                        if not out:
+                            continue
+                        pcm, w_theme, cr = out
+
+                        with st.expander(f"**{theme}** — Consistency Ratio (CR): {cr:.3f}", expanded=False):
+                            st.markdown(pcm_to_html(pcm), unsafe_allow_html=True)
+
+                            # (optional) show the same matrix in decimals, if you’d like a quick numeric view
+                            # st.dataframe(pd.DataFrame(pcm, index=WEC_DESIGNS, columns=WEC_DESIGNS).round(3))
+            except Exception as e:
+                st.info(f"Pairwise matrices unavailable ({e}).")
+
+
             col1, col2 = st.columns([1, 1])  # Two equal columns
 
             import matplotlib.pyplot as plt
@@ -1265,14 +1395,14 @@ with tabs[2]:
 
                 fig, ax = plt.subplots(figsize=(3.5, 2.8))
                 bars = ax.bar(wrapped_labels, values, color='orchid')
-                ax.set_title("Combined Scores from Both Surveys", fontsize=9)
+                ax.set_title("Combined Scores from Both Surveys", fontsize=8)
                 ax.set_ylabel("Weight", fontsize=8)
-                ax.tick_params(axis='x', rotation=45, labelsize=7)
-                ax.tick_params(axis='y', labelsize=7)
+                ax.tick_params(axis='x', rotation=45, labelsize=6)
+                ax.tick_params(axis='y', labelsize=6)
 
                 for bar, val in zip(bars, values):
                     ax.text(bar.get_x() + bar.get_width() / 2, val + 0.01, f"{val:.2f}", 
-                            ha='center', va='bottom', fontsize=7)
+                            ha='center', va='bottom', fontsize=6)
 
                 ax.margins(y=0.2)
                 plt.tight_layout()
@@ -1353,9 +1483,9 @@ with tabs[2]:
     st.markdown("### Monte Carlo Sensitivity Analysis (Theme Weight Uncertainty)")
 
     if "normalized_matrix" in st.session_state:
-        if st.button("▶️ Run 10,000 Simulations"):
+        if st.button("▶️ Run 50,000 Simulations"):
             try:
-                K = 10000
+                K = 50000
                 normalized_matrix = st.session_state["normalized_matrix"]
                 combined_theme_weights = st.session_state["combined_theme_weights"]
                 all_themes = st.session_state["all_themes"]
@@ -1400,7 +1530,7 @@ with tabs[2]:
                             ax.text(i, rank_val + 0.1, f"{count} ({pct:.1f}%)", ha='center', va='bottom', fontsize=7, color='black')
 
                     ax.set_ylabel("Rank", fontsize=9)
-                    ax.set_title("Rank Stability Across 10,000 Monte Carlo Runs", fontsize=10)
+                    ax.set_title("Rank Stability Across 50000 Monte Carlo Runs", fontsize=10)
                     ax.tick_params(axis='x', labelrotation=0, labelsize=7)
                     ax.tick_params(axis='y', labelsize=7)
                     ax.set_ylim(0.5, len(wec_names) + 1)
@@ -1408,15 +1538,129 @@ with tabs[2]:
                     st.pyplot(fig)
 
                 with col2:
-                    st.markdown("<br><br><br><br><br><br>", unsafe_allow_html=True)  # adjust number of <br> as needed
-                    st.markdown("#### 📊 Summary of Rank Stability")
-                    stats_df = pd.DataFrame({
-                        "WEC Design": wec_names,
-                        "Mean Rank": rank_df.mean().values,
-                        "Std Dev": rank_df.std().values
-                    }).sort_values("Mean Rank")
-                    st.dataframe(stats_df.round(2), use_container_width=True)
+                    st.markdown("<br><br><br><br><br><br>", unsafe_allow_html=True)
+                    st.markdown("#### 📊 Rank Stability by Design (Box with Mean & Median)")
 
+                    # --- Build box stats from rank_df using 1.5*IQR whiskers (pad zero-IQR) ---
+                    # --- Build box stats from rank_df using 1.5*IQR whiskers (include mean) ---
+                    def box_stats(vals: np.ndarray, eps: float = 0.05, center_on_inliers: bool = True):
+                        v = np.asarray(vals, dtype=float)
+                        q1, med, q3 = np.percentile(v, [25, 50, 75])
+                        iqr = q3 - q1
+                        if iqr < 1e-12:
+                            q1, q3 = med - eps, med + eps
+                            iqr = q3 - q1
+
+                        low_b, high_b = q1 - 1.5 * iqr, q3 + 1.5 * iqr
+                        inliers = v[(v >= low_b) & (v <= high_b)]
+
+                        # --- use inliers for mean/median if requested ---
+                        center = inliers if (center_on_inliers and inliers.size) else v
+                        med_center = float(np.median(center))
+                        mean_val   = float(np.mean(center))
+
+                        whislo = float(inliers.min()) if inliers.size else float(v.min())
+                        whishi = float(inliers.max()) if inliers.size else float(v.max())
+                        fliers = v[(v < low_b) | (v > high_b)].tolist()
+
+                        return {
+                            "q1": float(q1), "q3": float(q3),
+                            "med": med_center,          # median line (inlier-based if chosen)
+                            "whislo": whislo, "whishi": whishi,
+                            "fliers": fliers, "mean": mean_val  # for showmeans=True
+                        }
+
+                    stats = [box_stats(rank_df[w].values) for w in wec_names]
+
+                    from textwrap import fill
+                    labels_wrapped = [fill(w, width=16) for w in wec_names]
+                    x = np.arange(1, len(wec_names) + 1)
+
+                    fig, ax = plt.subplots(figsize=(4.6, 3.0))
+
+                    # Vertical box plot, show mean/median & outliers
+                    bp = ax.bxp(
+                        stats,
+                        positions=x,
+                        vert=True,                # keep vertical
+                        showfliers=True,          # draw outliers (+)
+                        showmeans=True,           # draw mean line
+                        meanline=True,
+                        widths=0.55,
+                        patch_artist=True,
+                        medianprops=dict(color="#c62828", linewidth=1.2),  # red median
+                        meanprops=dict(color="#2e7d32", linewidth=1.2),    # green mean
+                        whiskerprops=dict(color="#2f5ef5", linewidth=0.9),
+                        capprops=dict(color="#2f5ef5", linewidth=0.9),
+                        flierprops=dict(marker="+", markeredgecolor="#d32f2f",
+                        markersize=5, markeredgewidth=0.9)
+                    )
+                    
+                    for box in bp["boxes"]:
+                        box.set(facecolor="#e8f0ff", edgecolor="#2f5ef5", linewidth=0.9)
+
+                    # Axes cosmetics (unchanged)
+                    ax.set_xticks(x)
+                    ax.set_xticklabels(labels_wrapped, fontsize=7, rotation=0)
+                    ax.set_ylabel("Rank", fontsize=8)
+                    ax.tick_params(axis="y", labelsize=7)
+                    ax.grid(axis="y", linestyle="--", linewidth=0.5, alpha=0.5)
+
+                    # Rank 1 at top, fixed to 0..3.5
+                    ax.set_ylim(3.5, 0)
+                    ax.set_yticks(np.arange(0, 3.51, 0.5))
+
+                    # Legend (proxy artists)
+                    from matplotlib.lines import Line2D
+                    from matplotlib.patches import Patch
+
+                    legend_handles = [
+                        Patch(facecolor="#e8f0ff", edgecolor="#2f5ef5", label="IQR (Q1–Q3)"),
+                        Line2D([], [], color="#c62828", lw=1.2, label="Median"),
+                        Line2D([], [], color="#2e7d32", lw=1.2, label="Mean"),
+                        Line2D([], [], marker="+", color="none", markeredgecolor="#d32f2f",
+                            markersize=6, markeredgewidth=1.0, label="Outliers"),
+                    ]
+
+                    # ⬇️ inside the axes, top-center
+                    leg = ax.legend(
+                        handles=legend_handles,
+                        loc="upper center",
+                        bbox_to_anchor=(0.5, 0.98),      # y < 1 → inside; tweak 0.94–0.99 as you like
+                        ncol=len(legend_handles),        # horizontal row
+                        fontsize=7,
+                        frameon=True,
+                        framealpha=0.85,
+                        handlelength=1.6,
+                        handletextpad=0.4,
+                        columnspacing=0.8,
+                        borderaxespad=0.2,
+                    )
+
+                    # optional: subtle border
+                    leg.get_frame().set_linewidth(0.6)
+
+                    # If you previously reserved extra top space for an external legend, undo it:
+                    fig.subplots_adjust(top=0.95)   # or just omit this line entirely
+
+                    plt.tight_layout()
+                    # Title above the axes; legend stays inside the plot
+                    fig.suptitle("Ranking Variability by WEC Design", fontsize=9, y=0.99)
+
+                    # legend already inside; keep it just under the top edge
+                    leg = ax.legend(
+                        handles=legend_handles,
+                        loc="upper center",
+                        bbox_to_anchor=(0.5, 0.96),   # inside the plot area
+                        ncol=len(legend_handles),
+                        fontsize=7,
+                        frameon=True, framealpha=0.85,
+                        handlelength=1.6, handletextpad=0.4, columnspacing=0.8, borderaxespad=0.2,
+                    )
+
+                    # leave space for the suptitle
+                    fig.subplots_adjust(top=0.88)
+                    st.pyplot(fig)
 
                 from scipy.stats import kendalltau
 
@@ -1440,7 +1684,7 @@ with tabs[2]:
                     ax.hist(tau_distances, bins=30, color='slateblue', edgecolor='black', alpha=0.7)
                     ax.set_xlabel("Kendall’s Tau Distance", fontsize=9)
                     ax.set_ylabel("Frequency", fontsize=9)
-                    ax.set_title("Distribution of Kendall’s Tau Distance over 10,000 Simulations", fontsize=10)
+                    ax.set_title("Distribution of Kendall’s Tau Distance over 50000 Simulations", fontsize=10)
                     ax.tick_params(axis='both', labelsize=7)
                     plt.tight_layout()
                     st.pyplot(fig)
