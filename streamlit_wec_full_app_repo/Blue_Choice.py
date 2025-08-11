@@ -261,6 +261,36 @@ def topsis(matrix, weights):
     closeness = np.nan_to_num(closeness, nan=0.0, posinf=0.0, neginf=0.0)
     return closeness.round(4)
 
+def topsis_with_distances(matrix, weights):
+    # Normalize columns
+    col_norms = np.linalg.norm(matrix, axis=0)
+    safe_norms = np.where(col_norms == 0, 1.0, col_norms)
+    norm_matrix = matrix / safe_norms
+
+    # Weight
+    weighted = norm_matrix * weights
+
+    # Ideal / anti-ideal
+    ideal = np.max(weighted, axis=0)
+    anti = np.min(weighted, axis=0)
+
+    # Distances
+    d_pos = np.linalg.norm(weighted - ideal, axis=1)   # distance to ideal (smaller is better)
+    d_neg = np.linalg.norm(weighted - anti, axis=1)    # distance to anti-ideal (larger is better)
+
+    # Closeness (for reference)
+    with np.errstate(divide='ignore', invalid='ignore'):
+        closeness = d_neg / (d_pos + d_neg)
+        closeness = np.nan_to_num(closeness, nan=0.0, posinf=0.0, neginf=0.0)
+
+    # Distances for the A+ and A- reference points in this space
+    span = np.linalg.norm(ideal - anti)  # distance between A+ and A-
+    Aplus_xy = (0.0, span)               # (d_pos=0, d_neg=||ideal-anti||)
+    Aminus_xy = (span, 0.0)              # (d_pos=||ideal-anti||, d_neg=0)
+
+    return closeness, d_pos, d_neg, Aplus_xy, Aminus_xy
+
+
 # === Streamlit UI ===
 st.markdown("""
 <h1 style='font-size: 40px;'>
@@ -298,7 +328,7 @@ with tabs[0]:
     expertise_levels = {}
 
     st.subheader("Expert Scoring: Expertise Level")
-    col1, spacer, col2 = st.columns([3, 0.3, 2])
+    col1, col2, col3 = st.columns([1.2, 1, 1])
 
     with col1:
         expert_name = st.text_input("👤 Your Name", placeholder="Enter your name here")
@@ -352,9 +382,65 @@ with tabs[0]:
 
         table_html += "</tbody></table>"
         st.markdown(table_html, unsafe_allow_html=True)
+    
+    with col3:
+        st.markdown("""
+        <style>
+            .comparison-guide {
+                font-size: 14px;
+            }
+            .comparison-guide table {
+                border-collapse: collapse;
+                width: 100%;
+            }
+            .comparison-guide th, .comparison-guide td {
+                border: 1px solid #ddd;
+                padding: 8px;
+                text-align: center;
+            }
+            .comparison-guide th {
+                background-color: #003366;
+                color: #FFCB05;
+            }
+            .comparison-guide caption {
+                caption-side: top;
+                text-align: left;
+                font-weight: bold;
+                font-size: 18px;
+                margin-bottom: 10px;
+            }
+            .example {
+                background-color: #f1f8ff;
+                border-left: 4px solid #1f77b4;
+                padding: 10px;
+                margin-top: 20px;
+                font-size: 14px;
+            }
+        </style>
+
+        <div class="comparison-guide">
+        <h4>Pairwise Comparison Slider Guide</h4>
+        <table>
+            <tr>
+                <th>Slider Value</th>
+                <th>Meaning</th>
+            </tr>
+            <tr><td><b>1</b></td><td>Both WEC designs perform equally under this subcriterion</td></tr>
+            <tr><td><b>3</b></td><td>First design performs slightly better than the second</td></tr>
+            <tr><td><b>5</b></td><td>First design clearly performs better than the second</td></tr>
+            <tr><td><b>7</b></td><td>First design strongly outperforms the second</td></tr>
+            <tr><td><b>9</b></td><td>First design is overwhelmingly better under this subcriterion</td></tr>
+        </table>
+        </div>
+
+        <div class="example">
+        <b>📌 Example:</b><br>
+        If you set <b>Design A vs Design B (Noise) = 5</b>, you’re saying <i>"Design A"</i> is <b>clearly better</b> than <i>"Design B"</i> in minimizing noise impact.
+        </div>
+        """, unsafe_allow_html=True)
 
     st.subheader("Expert Scoring: Pairwise Comparisons of WEC Designs")
-    st.info("Scroll to the bottom to see the Pairwise Comparison Slider Guide")
+    # st.info("Scroll to the bottom to see the Pairwise Comparison Slider Guide")
 
     st.markdown("""
     <div style="padding: 10px; border: 1px solid #ddd; background-color: #f9f9f9; font-size: 15px">
@@ -590,62 +676,61 @@ with tabs[0]:
         st.error("❌ One or more subcriteria are inconsistent. Fix them before saving.")
 
 
-    st.markdown("""
-    <style>
-        .comparison-guide {
-            font-size: 14px;
-            margin-top: 30px;
-        }
-        .comparison-guide table {
-            border-collapse: collapse;
-            width: 100%;
-        }
-        .comparison-guide th, .comparison-guide td {
-            border: 1px solid #ddd;
-            padding: 8px;
-            text-align: center;
-        }
-        .comparison-guide th {
-            background-color: #003366;
-            color: #FFCB05;
-        }
-        .comparison-guide caption {
-            caption-side: top;
-            text-align: left;
-            font-weight: bold;
-            font-size: 18px;
-            margin-bottom: 10px;
-        }
-        .example {
-            background-color: #f1f8ff;
-            border-left: 4px solid #1f77b4;
-            padding: 10px;
-            margin-top: 20px;
-            font-size: 14px;
-        }
-    </style>
+    # st.markdown("""
+    # <style>
+    #     .comparison-guide {
+    #         font-size: 14px;
+    #         margin-top: 30px;
+    #     }
+    #     .comparison-guide table {
+    #         border-collapse: collapse;
+    #         width: 100%;
+    #     }
+    #     .comparison-guide th, .comparison-guide td {
+    #         border: 1px solid #ddd;
+    #         padding: 8px;
+    #         text-align: center;
+    #     }
+    #     .comparison-guide th {
+    #         background-color: #003366;
+    #         color: #FFCB05;
+    #     }
+    #     .comparison-guide caption {
+    #         caption-side: top;
+    #         text-align: left;
+    #         font-weight: bold;
+    #         font-size: 18px;
+    #         margin-bottom: 10px;
+    #     }
+    #     .example {
+    #         background-color: #f1f8ff;
+    #         border-left: 4px solid #1f77b4;
+    #         padding: 10px;
+    #         margin-top: 20px;
+    #         font-size: 14px;
+    #     }
+    # </style>
 
-    <div class="comparison-guide">
-    <h4>Pairwise Comparison Slider Guide</h4>
-    <table>
-        <tr>
-            <th>Slider Value</th>
-            <th>Meaning</th>
-        </tr>
-        <tr><td><b>1</b></td><td>Both WEC designs perform equally under this subcriterion</td></tr>
-        <tr><td><b>3</b></td><td>First design performs slightly better than the second</td></tr>
-        <tr><td><b>5</b></td><td>First design clearly performs better than the second</td></tr>
-        <tr><td><b>7</b></td><td>First design strongly outperforms the second</td></tr>
-        <tr><td><b>9</b></td><td>First design is overwhelmingly better under this subcriterion</td></tr>
-        <tr><td><b>2, 4, 6, 8</b></td><td>Intermediate judgments between the above levels</td></tr>
-    </table>
-    </div>
+    # <div class="comparison-guide">
+    # <h4>Pairwise Comparison Slider Guide</h4>
+    # <table>
+    #     <tr>
+    #         <th>Slider Value</th>
+    #         <th>Meaning</th>
+    #     </tr>
+    #     <tr><td><b>1</b></td><td>Both WEC designs perform equally under this subcriterion</td></tr>
+    #     <tr><td><b>3</b></td><td>First design performs slightly better than the second</td></tr>
+    #     <tr><td><b>5</b></td><td>First design clearly performs better than the second</td></tr>
+    #     <tr><td><b>7</b></td><td>First design strongly outperforms the second</td></tr>
+    #     <tr><td><b>9</b></td><td>First design is overwhelmingly better under this subcriterion</td></tr>
+    # </table>
+    # </div>
 
-    <div class="example">
-    <b>📌 Example:</b><br>
-    If you set <b>Design A vs Design B (Noise) = 5</b>, you’re saying <i>"Design A"</i> is <b>clearly better</b> than <i>"Design B"</i> in minimizing noise impact.
-    </div>
-    """, unsafe_allow_html=True)
+    # <div class="example">
+    # <b>📌 Example:</b><br>
+    # If you set <b>Design A vs Design B (Noise) = 5</b>, you’re saying <i>"Design A"</i> is <b>clearly better</b> than <i>"Design B"</i> in minimizing noise impact.
+    # </div>
+    # """, unsafe_allow_html=True)
 
 
 # === TAB 2: COMMUNITY INPUT ===
@@ -720,6 +805,14 @@ with tabs[1]:
         qkey="q9"
     )
 
+    st.markdown("## Q11. Concern about interference with current uses of nearshore Lake Michigan areas")
+    q11, q11_reason = ask_concern_question(
+        "How concerned are you that wave energy development near Beaver Island might interfere with current uses of Lake Michigan’s nearshore areas (such as ferry routes, fishing grounds, swimming spots, or cultural/recreational activities)?",
+        "Q11(a) What gives you confidence that wave energy will not interfere with how people use the lake or nearshore areas around Beaver Island?",
+        "Q11(b) What concerns do you have about how wave energy development could affect existing uses of Lake Michigan around Beaver Island?",
+        qkey="q11"
+    )
+
     st.markdown("## Q10. Would you like to be contacted in future to help validate our results?")
     q10 = st.radio("Would you like to be contacted in future to help validate our results?", ["Yes", "No"], key="q10")
     contact_name = contact_email = contact_phone = ""
@@ -744,6 +837,7 @@ with tabs[1]:
         whfs_q7 = get_whfs_from_likert_and_text(likert_map_5pt.get(q7, ""), q7_reason)
         whfs_q8 = get_whfs_from_likert_and_text(likert_map_5pt.get(q8, ""), q8_reason)
         whfs_q9 = get_whfs_from_likert_and_text(likert_map_5pt.get(q9, ""), q9_reason)
+        whfs_q11 = get_whfs_from_likert_and_text(likert_map_5pt.get(q11, ""), q11_reason)
 
         row = [
             datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
@@ -756,6 +850,7 @@ with tabs[1]:
             likert_map_5pt.get(q7, ""), q7_reason, json.dumps(whfs_q7),
             likert_map_5pt.get(q8, ""), q8_reason, json.dumps(whfs_q8),
             likert_map_5pt.get(q9, ""), q9_reason, json.dumps(whfs_q9),
+            likert_map_5pt.get(q11, ""), q11_reason, json.dumps(whfs_q11),
             q10,
             contact_name, contact_email, contact_phone
         ]
@@ -769,6 +864,7 @@ with tabs[1]:
             "Q7 Ecosystem Concern", "Q7 Explanation", "Q7 WHFS",
             "Q8 Visual Concern", "Q8 Explanation", "Q8 WHFS",
             "Q9 Economic Concern", "Q9 Explanation", "Q9 WHFS",
+            "Q11 Marine Space Utilization Concern", "Q11 Explanation", "Q11 WHFS",
             "Q10 Contact?", "Name", "Email", "Phone"
         ]
 
@@ -814,19 +910,21 @@ with tabs[2]:
                 "Q6 WHFS": "Functional Efficiency",
                 "Q7 WHFS": "Environmental Sustainability",
                 "Q8 WHFS": "Sense of Place",
-                "Q9 WHFS": "Community Prosperity"
+                "Q9 WHFS": "Community Prosperity",
+                "Q11 WHFS": "Marine Space Utilization"
             }
 
             from ast import literal_eval
             whfs_theme_agg = {t: [] for t in set(whfs_question_map.values())}
             for _, row in comm_df.iterrows():
                 for q, theme in whfs_question_map.items():
-                    try:
-                        scores = literal_eval(row[q]) if isinstance(row[q], str) else row[q]
-                        for level, wt in scores:
-                            whfs_theme_agg[theme].append(level * wt)
-                    except:
-                        continue
+                    if q in row and pd.notna(row[q]):
+                        try:
+                            scores = literal_eval(row[q]) if isinstance(row[q], str) else row[q]
+                            for level, wt in scores:
+                                whfs_theme_agg[theme].append(level * wt)
+                        except Exception:
+                            continue
 
             whfs_theme_weights = {t: np.mean(v) for t, v in whfs_theme_agg.items() if v}
             whfs_total = sum(whfs_theme_weights.values())
@@ -863,7 +961,7 @@ with tabs[2]:
             # --- TOPSIS Ranking ---
             matrix = normalized_matrix[all_themes].values
             weights = np.array([combined_theme_weights[t] for t in all_themes])
-            closeness = topsis(matrix, weights)
+            closeness, d_pos, d_neg, Aplus_xy, Aminus_xy = topsis_with_distances(matrix, weights)
 
             result_df = pd.DataFrame({
                 "WEC Design": final_matrix.index,
@@ -881,9 +979,215 @@ with tabs[2]:
                 ws.append(row)
             wb.save(EXCEL_FILE)
 
-            # --- Display Outputs ---
+            # --- Row 1: Final AHP table (single column) ---
             st.markdown("### ✅ Final AHP Scores (Normalized)")
-            st.dataframe(normalized_matrix.drop(columns=["Total Score"]).round(4))
+
+            df_tbl = (
+                normalized_matrix
+                .drop(columns=["Total Score"], errors="ignore")  # ignore if missing
+                .dropna(how="all")                               # remove all-NaN rows
+            )
+
+            # If any row is all zeros (after fill), drop it too
+            df_tbl = df_tbl.loc[~(df_tbl.fillna(0).eq(0).all(axis=1))]
+
+            # Order by final ranking if available
+            if "result_df" in st.session_state:
+                order = st.session_state["result_df"]["WEC Design"].tolist()
+                df_tbl = df_tbl.reindex(order)
+
+            # Show only 4 rows
+            df_tbl = df_tbl.head(4).round(4)
+
+            # Tight height for exactly 4 rows
+            row_height = 32
+            header_height = 28
+            height = header_height + row_height * len(df_tbl)
+
+            st.dataframe(df_tbl, use_container_width=True, height=height)
+
+
+            # --- Row 2: Two columns (Left = TOPSIS plot, Right = Stacked expertise) ---
+            col_plot, col_dist = st.columns([1.5, 1.5])
+
+            with col_plot:
+                st.markdown("#### ✨ TOPSIS Geometry: (Left & Up is Better)")
+
+                names = list(final_matrix.index)         # row order ↔ matrix order
+                x = d_pos.astype(float)                  # distance to ideal (smaller is better)
+                y = d_neg.astype(float)                  # distance to anti-ideal (larger is better)
+
+                fig, ax = plt.subplots(figsize=(5.2, 3.6))
+
+                # Color by closeness C* and add colorbar (discrete bins around 0.50; keep 0..1 scale)
+                import matplotlib.colors as mcolors
+                import matplotlib.pyplot as plt
+
+                bins = np.array([0.00, 0.35, 0.45, 0.48, 0.50, 0.52, 0.55, 0.65, 1.00])
+                cmap = plt.get_cmap("turbo", len(bins) - 1)
+                norm = mcolors.BoundaryNorm(bins, cmap.N, clip=True)
+
+                sc = ax.scatter(
+                    x, y, c=closeness, s=80,
+                    cmap=cmap, norm=norm,
+                    edgecolor="black", linewidth=0.6
+                )
+
+                cbar = plt.colorbar(sc, ax=ax, fraction=0.046, pad=0.04, boundaries=bins)
+                cbar.set_label("Closeness to Ideal (C*)", fontsize=6)
+                cbar.ax.tick_params(labelsize=6)
+                cbar.set_ticks([0.00, 0.45, 0.50, 0.55, 1.00])
+                cbar.set_ticklabels(["0.00", "0.45", "0.50", "0.55", "1.00"])
+
+                # Annotate each point with name + C*
+                for xi, yi, nm, c in zip(x, y, names, closeness):
+                    ax.annotate(f"{nm}\nC*={c:.3f}", (xi, yi),
+                                xytext=(-15, 6), textcoords="offset points", fontsize=6)
+
+                # A+ (green star) and A− (red X)
+                ax.scatter([Aplus_xy[0]],  [Aplus_xy[1]],
+                        marker="*", s=100, color="#2ecc71",
+                        edgecolor="black", linewidth=0.6, zorder=3,
+                        label="A+ (Ideal)")
+                ax.scatter([Aminus_xy[0]], [Aminus_xy[1]],
+                        marker="X", s=70, color="#e74c3c",
+                        edgecolor="black", linewidth=0.6, zorder=3,
+                        label="A− (Anti-ideal)")
+
+                # Coordinate labels for A+ and A− (two lines)
+                ax.annotate(
+                    f"A+\n(d⁺={Aplus_xy[0]:.3f}, d⁻={Aplus_xy[1]:.3f})",
+                    (Aplus_xy[0], Aplus_xy[1]),
+                    xytext=(6, -8), textcoords="offset points",
+                    ha="left", va="top", fontsize=6,
+                    bbox=dict(boxstyle="round,pad=0.2", fc="white", ec="none", alpha=0.75)
+                )
+                ax.annotate(
+                    f"A−\n(d⁺={Aminus_xy[0]:.3f}, d⁻={Aminus_xy[1]:.3f})",
+                    (Aminus_xy[0], Aminus_xy[1]),
+                    xytext=(-6, 8), textcoords="offset points",
+                    ha="right", va="bottom", fontsize=6,
+                    bbox=dict(boxstyle="round,pad=0.2", fc="white", ec="none", alpha=0.75)
+                )
+
+                ax.set_xlabel("Distance to Ideal (d⁺)", fontsize=8)
+                ax.set_ylabel("Distance to Anti-ideal (d⁻)", fontsize=8)
+                ax.set_title("TOPSIS: Distance map (Ideal vs Distance to Anti-ideal)", fontsize=8)
+                ax.tick_params(axis="both", which="major", labelsize=6)
+                ax.grid(True, linestyle="--", linewidth=0.5, alpha=0.6)
+                ax.legend(fontsize=6, loc="best")
+
+                plt.tight_layout()
+                col_plot.pyplot(fig)
+
+                # Save high-res image next to the code file
+                from pathlib import Path
+                try:
+                    out_dir = Path(__file__).parent
+                except NameError:
+                    out_dir = Path.cwd()
+                fname = "topsis_distance_map"
+                fig.savefig(out_dir / f"{fname}.png", dpi=600, bbox_inches="tight", facecolor="white")
+
+
+            with col_dist:
+                st.markdown("#### 👩‍🔬 Expertise Level Distribution (Stacked %)")
+
+                try:
+                    df_ec = pd.read_excel(EXCEL_FILE, sheet_name="Expert Contributions Tab")
+
+                    # One number per (Expert, Theme)
+                    per_expert = (
+                        df_ec.groupby(["Name", "Theme"], as_index=False)["Expertise Level"]
+                            .mean()
+                            .dropna(subset=["Expertise Level"])
+                    )
+
+                    if per_expert.empty:
+                        st.info("No expert entries yet to summarize.")
+                    else:
+                        theme_order = [t for t in THEMES if t in per_expert["Theme"].unique()]
+                        per_expert["Level"] = per_expert["Expertise Level"].round().clip(1, 5).astype(int)
+                        order_lvls = [1, 2, 3, 4, 5]
+
+                        # Counts -> % by theme
+                        counts = (per_expert.groupby(["Theme", "Level"])
+                                .size()
+                                .unstack(fill_value=0)
+                                .reindex(index=theme_order, columns=order_lvls, fill_value=0))
+                        pct = counts.div(counts.sum(axis=1), axis=0).fillna(0) * 100.0
+
+                        # ---- Plot (explicit x positions so labels align perfectly) ----
+                        x = np.arange(len(theme_order))
+                        width = 0.38   # narrower bars
+                        fig2, ax2 = plt.subplots(figsize=(4, 3.0))
+                        bottom = np.zeros_like(x, dtype=float)
+
+                        for lvl in order_lvls:
+                            vals = pct[lvl].reindex(theme_order).values
+                            ax2.bar(x, vals, width=width, bottom=bottom, label=f"Level {lvl}")
+                            bottom += vals
+
+                        ax2.set_ylim(0, 100)
+                        ax2.set_xlim(x[0] - width/2 - 0.1, x[-1] + width/2 + 0.1)
+                        ax2.set_ylabel("Experts at level (%)", fontsize=8)
+                        ax2.set_xlabel("Themes / Criteria for WEC Evaluation", fontsize=8)
+
+                        # Put labels under the right bars
+                        from textwrap import fill
+                        # Wrapped + inclined x labels
+                        wrapped_labels = [fill(t, width=15) for t in theme_order]
+                        ax2.set_xticks(x)
+                        ax2.set_xticklabels(
+                            wrapped_labels,
+                            fontsize=6,
+                            rotation=35,           # or 45 if you prefer
+                            ha="right",
+                            rotation_mode="anchor" # keeps the right edge anchored while rotating
+                        )
+                        # Make multi-line alignment consistent
+                        for lbl in ax2.get_xticklabels():
+                            lbl.set_multialignment("right")
+
+                        # Slight padding + extra bottom room so wrapped text isn’t clipped
+                        ax2.tick_params(axis="x", pad=2)
+                        plt.tight_layout(rect=[0, 0.20, 1, 0.9])
+
+                        ax2.tick_params(axis="y", labelsize=6)
+                        ax2.grid(axis="y", linestyle="--", linewidth=0.5, alpha=0.5)
+
+                        # Legend above the plot — no overlap
+                        # Legend just below the title, above the axes (no overlap)
+                        fig2.suptitle("Expertise Distribution by Theme", fontsize=8, y=0.985)
+
+                        ax2.legend(
+                            loc="upper center",
+                            bbox_to_anchor=(0.55, 0.93),    # position in figure coords
+                            bbox_transform=fig2.transFigure,
+                            ncol=5, fontsize=6, frameon=True
+                        )
+
+                        fig2.subplots_adjust(top=0.80)
+
+                        # Leave room for the legend above
+                        plt.tight_layout(rect=[0, 0, 1, 0.9])
+                        # --- Title above the legend ---
+                        fig2.subplots_adjust(top=0.82, bottom=0.28)  # tweak if needed
+                        # --- Save high-res image next to the code file ---
+                        from pathlib import Path
+
+                        try:
+                            out_dir = Path(__file__).parent      # same folder as this script
+                        except NameError:
+                            out_dir = Path.cwd()                 # fallback in interactive/Streamlit
+
+                        fname = "expertise_distribution_by_theme"
+                        fig2.savefig(out_dir / f"{fname}.png", dpi=600, bbox_inches="tight", facecolor="white")
+                        st.pyplot(fig2)
+
+                except Exception as e:
+                    st.info(f"Expertise summary unavailable ({e}).")
+
 
             # === Individual Radar Charts for Each WEC Design ===
             from textwrap import fill
@@ -921,10 +1225,19 @@ with tabs[2]:
 
                 ax.set_theta_offset(np.pi / 2)
                 ax.set_theta_direction(-1)
-                ax.set_ylim(0, 0.35)
+                ax.set_ylim(0, 0.35)  # keep your existing max scale
                 ax.set_rlabel_position(180 / num_vars)
                 ax.tick_params(axis='y', labelsize=6)
-                ax.set_yticklabels([])
+
+                # Automatically pick 3–4 radial ticks inside the range
+                # Keep all concentric circles at 0.05 increments for the grid
+                all_rings = [round(x, 2) for x in np.arange(0.05, 0.36, 0.05)]
+                ax.set_yticks(all_rings)
+
+                # Only show labels for selected rings
+                label_rings = {0.05, 0.15, 0.25, 0.35}
+                ax.set_yticklabels([f"{y:.2f}" if y in label_rings else "" for y in all_rings], fontsize=6)
+
                 ax.grid(True, linestyle='--', linewidth=0.5, alpha=0.6)
 
                 # Add WEC title below the plot
@@ -938,26 +1251,35 @@ with tabs[2]:
 
             col1, col2 = st.columns([1, 1])  # Two equal columns
 
+            import matplotlib.pyplot as plt
+            from textwrap import fill
+
+            import matplotlib.pyplot as plt
+            from textwrap import fill
+
             with col1:
-                labels = [fill(label, width=15) for label in combined_theme_weights.keys()]
+                st.markdown("#### 📊 Combined Theme Weights")
+                
+                wrapped_labels = [fill(label, width=15) for label in combined_theme_weights.keys()]
                 values = list(combined_theme_weights.values())
 
-                fig, ax = plt.subplots(figsize=(2.5, 2))
-                bars = ax.bar(labels, values)
-
-                ax.set_title("Combined Theme Weights from Surveys", fontsize=5)
-                ax.set_ylabel("Weight", fontsize=4)
-
-                plt.xticks(rotation=45, ha='right', fontsize=4)
-                ax.tick_params(axis='y', labelsize=4)
+                fig, ax = plt.subplots(figsize=(3.5, 2.8))
+                bars = ax.bar(wrapped_labels, values, color='orchid')
+                ax.set_title("Combined Scores from Both Surveys", fontsize=9)
+                ax.set_ylabel("Weight", fontsize=8)
+                ax.tick_params(axis='x', rotation=45, labelsize=7)
+                ax.tick_params(axis='y', labelsize=7)
 
                 for bar, val in zip(bars, values):
                     ax.text(bar.get_x() + bar.get_width() / 2, val + 0.01, f"{val:.2f}", 
-                            ha='center', va='bottom', fontsize=4)
+                            ha='center', va='bottom', fontsize=7)
 
                 ax.margins(y=0.2)
                 plt.tight_layout()
+
                 st.pyplot(fig)
+                fig.savefig("combined_theme_weights.png", dpi=300, bbox_inches='tight')
+
 
             with col2:
                 # Add vertical space to roughly center-align with col1 chart
@@ -965,16 +1287,33 @@ with tabs[2]:
                 st.markdown("#### 🏆 TOPSIS Final Rankings")
                 st.dataframe(result_df.set_index("Rank"), use_container_width=True)
 
+            
+
             col1, col2 = st.columns(2)
 
+            # Sort labels once and reuse
+            sorted_labels = sorted(prelim_theme_weights.keys())  # or use whfs_theme_weights.keys() — just be consistent
+            wrapped_labels = [fill(label, width=15) for label in sorted_labels]
+
+            import matplotlib.pyplot as plt
+            from matplotlib import rcParams
+
+            # Set LaTeX-like font style globally
+            rcParams.update({
+                "font.family": "serif",
+                "font.serif": ["Computer Modern Roman"],
+                "mathtext.fontset": "cm",  # Computer Modern math font
+                "axes.unicode_minus": False
+            })
+
+            # Plot and save Preliminary Theme Weights
             with col1:
-                st.markdown("#### 🧮 Preliminary Theme Weights")
-                labels = [fill(label, width=15) for label in prelim_theme_weights.index]
-                values = prelim_theme_weights.values
+                st.markdown("#### Preliminary Theme Weights")
+                values = [prelim_theme_weights[label] for label in sorted_labels]
 
                 fig, ax = plt.subplots(figsize=(3.5, 2.8))
-                bars = ax.bar(labels, values, color='skyblue')
-                ax.set_title("Preliminary Survey", fontsize=9)
+                bars = ax.bar(wrapped_labels, values, color='skyblue')
+                ax.set_title("Preliminary Likert Survey", fontsize=9)
                 ax.set_ylabel("Weight", fontsize=8)
                 ax.tick_params(axis='x', rotation=45, labelsize=7)
                 ax.tick_params(axis='y', labelsize=7)
@@ -983,15 +1322,16 @@ with tabs[2]:
                 ax.margins(y=0.2)
                 plt.tight_layout()
                 st.pyplot(fig)
+                fig.savefig("preliminary_theme_weights.png", dpi=300, bbox_inches='tight')
 
+            # Plot and save WHFS Theme Weights
             with col2:
-                st.markdown("#### 🤝 WHFS Theme Weights")
-                labels = [fill(label, width=15) for label in whfs_theme_weights.keys()]
-                values = list(whfs_theme_weights.values())
+                st.markdown("#### WHFS Theme Weights")
+                values = [whfs_theme_weights.get(label, 0) for label in sorted_labels]
 
                 fig, ax = plt.subplots(figsize=(3.5, 2.8))
-                bars = ax.bar(labels, values, color='lightgreen')
-                ax.set_title("Community WHFS Scores", fontsize=9)
+                bars = ax.bar(wrapped_labels, values, color='lightgreen')
+                ax.set_title("Secondary Survey with WHFS Scores", fontsize=9)
                 ax.set_ylabel("Weight", fontsize=8)
                 ax.tick_params(axis='x', rotation=45, labelsize=7)
                 ax.tick_params(axis='y', labelsize=7)
@@ -1000,8 +1340,8 @@ with tabs[2]:
                 ax.margins(y=0.2)
                 plt.tight_layout()
                 st.pyplot(fig)
+                fig.savefig("whfs_theme_weights.png", dpi=300, bbox_inches='tight')
 
-            
             st.session_state["normalized_matrix"] = normalized_matrix
             st.session_state["combined_theme_weights"] = combined_theme_weights
             st.session_state["all_themes"] = all_themes
@@ -1010,7 +1350,7 @@ with tabs[2]:
             st.error(f"❌ Error in final ranking: {e}")
     
     # --- Monte Carlo Sensitivity Analysis ---
-    st.markdown("### 🎲 Monte Carlo Sensitivity Analysis (Theme Weight Uncertainty)")
+    st.markdown("### Monte Carlo Sensitivity Analysis (Theme Weight Uncertainty)")
 
     if "normalized_matrix" in st.session_state:
         if st.button("▶️ Run 10,000 Simulations"):
