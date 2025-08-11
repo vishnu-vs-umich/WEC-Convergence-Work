@@ -937,31 +937,36 @@ with tabs[2]:
                 for t in all_themes
             }
 
-            # --- Group Subcriteria by Theme and Apply Theme Weights ---
+            # --- Group subcriteria by Theme (UNWEIGHTED theme scores) ---
             grouped_scores = {}
             for theme in combined_theme_weights:
                 sub_cols = [c for c in ahp_df.columns if c.startswith(theme)]
                 if sub_cols:
-                    theme_score = ahp_df[sub_cols].mean(axis=1)
-                    grouped_scores[theme] = theme_score * combined_theme_weights[theme]
+                    grouped_scores[theme] = ahp_df[sub_cols].mean(axis=1)
 
-            final_matrix = pd.DataFrame(grouped_scores)
-            
-            # Normalize each row (WEC Design) so that the sum of theme scores equals 1
-            normalized_matrix = final_matrix.copy()
-            normalized_matrix = normalized_matrix.drop(columns=["Total Score"], errors='ignore')
-            row_sums = normalized_matrix.sum(axis=1)
-            normalized_matrix = normalized_matrix.div(row_sums, axis=0)
-            normalized_matrix["Total Score"] = 1.0  # By construction, every row now sums to 1
+            final_matrix = pd.DataFrame(grouped_scores)   # unweighted by theme
+    
+            # A row-normalized copy purely for display (tables / radar)
+            display_matrix = final_matrix.div(final_matrix.sum(axis=1), axis=0).fillna(0.0)
+            display_matrix["Total Score"] = 1.0
 
-            # --- Save Final Weighted AHP Scores ---
+            # Save the display matrix (keeps your existing sheet name)
             with pd.ExcelWriter(EXCEL_FILE, engine="openpyxl", mode="a", if_sheet_exists="replace") as writer:
-                normalized_matrix.to_excel(writer, sheet_name="Final AHP Theme Weights")
+                display_matrix.to_excel(writer, sheet_name="Final AHP Theme Weights")
 
             # --- TOPSIS Ranking ---
-            matrix = normalized_matrix[all_themes].values
-            weights = np.array([combined_theme_weights[t] for t in all_themes])
-            closeness, d_pos, d_neg, Aplus_xy, Aminus_xy = topsis_with_distances(matrix, weights)
+            # Use only the themes that appear in the matrix (defensive against missing themes)
+            used_themes = [t for t in all_themes if t in final_matrix.columns]
+
+            # Unweighted inputs to TOPSIS
+            topsis_matrix = final_matrix[used_themes].to_numpy(dtype=float)
+
+            # Community weights are applied here (once)
+            weights = np.array([combined_theme_weights[t] for t in used_themes], dtype=float)
+            weights = weights / weights.sum()  # just in case
+
+            closeness, d_pos, d_neg, Aplus_xy, Aminus_xy = topsis_with_distances(topsis_matrix, weights)
+
 
             result_df = pd.DataFrame({
                 "WEC Design": final_matrix.index,
@@ -974,7 +979,7 @@ with tabs[2]:
             # --- Save Final Rankings ---
             ws, wb = read_excel("Final Rankings")
             ws.delete_rows(1, ws.max_row)
-            ws.append(["WEC Design", "Closeness to Ideal"])
+            ws.append(["Rank", "WEC Design", "Closeness to Ideal"])
             for row in result_df.values.tolist():
                 ws.append(row)
             wb.save(EXCEL_FILE)
@@ -983,7 +988,7 @@ with tabs[2]:
             st.markdown("### ✅ Final AHP Scores (Normalized)")
 
             df_tbl = (
-                normalized_matrix
+                display_matrix
                 .drop(columns=["Total Score"], errors="ignore")  # ignore if missing
                 .dropna(how="all")                               # remove all-NaN rows
             )
@@ -1005,7 +1010,6 @@ with tabs[2]:
             height = header_height + row_height * len(df_tbl)
 
             st.dataframe(df_tbl, use_container_width=True, height=height)
-
 
             # --- Row 2: Two columns (Left = TOPSIS plot, Right = Stacked expertise) ---
             col_plot, col_dist = st.columns([1.5, 1.5])
@@ -1191,7 +1195,7 @@ with tabs[2]:
 
             # === Individual Radar Charts for Each WEC Design ===
             from textwrap import fill
-            labels = list(normalized_matrix.columns.drop("Total Score"))
+            labels = list(display_matrix.columns.drop("Total Score"))
             wrapped_labels = [fill(label, width=15) for label in labels]
 
             num_vars = len(labels)
@@ -1205,9 +1209,9 @@ with tabs[2]:
             st.markdown("### 🕸️ AHP Radar Charts")
 
             # Streamlit columns
-            cols = st.columns(len(normalized_matrix))  # dynamically create one column per WEC
+            cols = st.columns(len(display_matrix))  # dynamically create one column per WEC
 
-            for i, (idx, row) in enumerate(normalized_matrix.iterrows()):
+            for i, (idx, row) in enumerate(display_matrix.iterrows()):
                 values = row[labels].tolist()
                 values += values[:1]
 
@@ -1472,29 +1476,32 @@ with tabs[2]:
                 st.pyplot(fig)
                 fig.savefig("whfs_theme_weights.png", dpi=300, bbox_inches='tight')
 
-            st.session_state["normalized_matrix"] = normalized_matrix
+            st.session_state["display_matrix"] = display_matrix
+            st.session_state["topsis_matrix"] = topsis_matrix
+            st.session_state["topsis_themes"] = used_themes
             st.session_state["combined_theme_weights"] = combined_theme_weights
-            st.session_state["all_themes"] = all_themes
-            st.session_state["wec_names"] = list(normalized_matrix.index)
+            st.session_state["wec_names"] = list(display_matrix.index)
+
         except Exception as e:
             st.error(f"❌ Error in final ranking: {e}")
     
     # --- Monte Carlo Sensitivity Analysis ---
     st.markdown("### Monte Carlo Sensitivity Analysis (Theme Weight Uncertainty)")
 
-    if "normalized_matrix" in st.session_state:
+    needed_keys = {"topsis_matrix", "topsis_themes", "wec_names", "combined_theme_weights"}
+    if needed_keys.issubset(st.session_state):
         if st.button("▶️ Run 50,000 Simulations"):
             try:
                 K = 50000
-                normalized_matrix = st.session_state["normalized_matrix"]
+                topsis_matrix = st.session_state["topsis_matrix"]
                 combined_theme_weights = st.session_state["combined_theme_weights"]
-                all_themes = st.session_state["all_themes"]
+                used_themes = st.session_state["topsis_themes"]
                 wec_names = st.session_state["wec_names"]
 
-                # Run Monte Carlo as before...
-                decision_matrix = normalized_matrix[all_themes].values
-                alpha = np.array([combined_theme_weights[t] for t in all_themes])
-                alpha_scaled = alpha * 100
+                decision_matrix = topsis_matrix  # unweighted inputs
+                alpha = np.array([combined_theme_weights[t] for t in used_themes], dtype=float)
+                alpha_scaled = np.maximum(alpha, 1e-9) * 100
+
 
                 rank_distributions = []
                 for _ in range(K):
