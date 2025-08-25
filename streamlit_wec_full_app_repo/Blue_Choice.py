@@ -49,7 +49,7 @@ def write_excel(sheet_name, data, mode='append'):
 st.set_page_config(layout="wide")
 
 # === Config and setup continues below ===
-WEC_DESIGNS = ["Point Absorber", "Oscillating Water Column", "Oscillating Surge Flap"]
+WEC_DESIGNS = ["Point Absorber", "Oscillating Water Column", "Oscillating Wave Surge Flap"]
 
 client = OpenAI(api_key=st.secrets["OPENAI_API_KEY"])
 
@@ -1045,8 +1045,9 @@ with tabs[2]:
 
                 # Annotate each point with name + C*
                 for xi, yi, nm, c in zip(x, y, names, closeness):
-                    ax.annotate(f"{nm}\nC*={c:.3f}", (xi, yi),
-                                xytext=(-15, 6), textcoords="offset points", fontsize=6)
+                    label = "OWC" if nm.strip().lower() == "oscillating water column" else nm
+                    ax.annotate(f"{label}\nC*={c:.3f}", (xi, yi),
+                                xytext=(-10, 6), textcoords="offset points", fontsize=6)
 
                 # A+ (green star) and A− (red X)
                 ax.scatter([Aplus_xy[0]],  [Aplus_xy[1]],
@@ -1062,14 +1063,14 @@ with tabs[2]:
                 ax.annotate(
                     f"A+\n(d⁺={Aplus_xy[0]:.3f}, d⁻={Aplus_xy[1]:.3f})",
                     (Aplus_xy[0], Aplus_xy[1]),
-                    xytext=(6, -8), textcoords="offset points",
+                    xytext=(0, -8), textcoords="offset points",
                     ha="left", va="top", fontsize=6,
                     bbox=dict(boxstyle="round,pad=0.2", fc="white", ec="none", alpha=0.75)
                 )
                 ax.annotate(
                     f"A−\n(d⁺={Aminus_xy[0]:.3f}, d⁻={Aminus_xy[1]:.3f})",
                     (Aminus_xy[0], Aminus_xy[1]),
-                    xytext=(-6, 8), textcoords="offset points",
+                    xytext=(0, 8), textcoords="offset points",
                     ha="right", va="bottom", fontsize=6,
                     bbox=dict(boxstyle="round,pad=0.2", fc="white", ec="none", alpha=0.75)
                 )
@@ -1156,9 +1157,7 @@ with tabs[2]:
                         # Slight padding + extra bottom room so wrapped text isn’t clipped
                         ax2.tick_params(axis="x", pad=2)
                         plt.tight_layout(rect=[0, 0.20, 1, 0.9])
-
                         ax2.tick_params(axis="y", labelsize=6)
-                        ax2.grid(axis="y", linestyle="--", linewidth=0.5, alpha=0.5)
 
                         # Legend above the plot — no overlap
                         # Legend just below the title, above the axes (no overlap)
@@ -1500,25 +1499,32 @@ with tabs[2]:
 
                 decision_matrix = topsis_matrix  # unweighted inputs
                 alpha = np.array([combined_theme_weights[t] for t in used_themes], dtype=float)
-                alpha_scaled = np.maximum(alpha, 1e-9) * 100
+                alpha_scaled = np.maximum(alpha, 1e-9) * 100  # concentrate around baseline weights
 
-
+                # --- Run simulations: collect BOTH ranks and closeness ---
                 rank_distributions = []
+                closeness_distributions = []
                 for _ in range(K):
                     sampled_weights = np.random.dirichlet(alpha_scaled)
-                    scores = topsis(decision_matrix, sampled_weights)
+                    scores = topsis(decision_matrix, sampled_weights)  # C* in [0,1], higher is better
+
+                    # Store for box plot (closeness)
+                    closeness_distributions.append(pd.Series(scores, index=wec_names))
+
+                    # Store for strip plot / Kendall's τ (ranks)
                     ranks = pd.Series((-scores).argsort().argsort() + 1, index=wec_names)
                     rank_distributions.append(ranks)
 
-                rank_df = pd.DataFrame(rank_distributions)
+                rank_df = pd.DataFrame(rank_distributions)            # K × M of ranks
+                closeness_df = pd.DataFrame(closeness_distributions)  # K × M of C*
 
                 col1, col2 = st.columns([1.5, 1])  # Adjust width ratio as needed
 
+                # --- LEFT: RANK stripplot (unchanged) ---
                 with col1:
                     st.markdown("#### 📦 Rank Distribution Across Simulations")
                     fig, ax = plt.subplots(figsize=(6, 3.5))
 
-                    # Plot stripplot
                     sns.stripplot(
                         data=rank_df[wec_names],
                         ax=ax,
@@ -1528,13 +1534,14 @@ with tabs[2]:
                         alpha=0.3
                     )
 
-                    # Annotate with count and percentage
+                    # Annotate with count and percentage at each rank for each design
                     total = len(rank_df)
                     for i, wec in enumerate(wec_names):
                         counts = rank_df[wec].value_counts().sort_index()
                         for rank_val, count in counts.items():
                             pct = 100 * count / total
-                            ax.text(i, rank_val + 0.1, f"{count} ({pct:.1f}%)", ha='center', va='bottom', fontsize=7, color='black')
+                            ax.text(i, rank_val + 0.1, f"{count} ({pct:.1f}%)",
+                                    ha='center', va='bottom', fontsize=7, color='black')
 
                     ax.set_ylabel("Rank", fontsize=9)
                     ax.set_title("Rank Stability Across 50000 Monte Carlo Runs", fontsize=10)
@@ -1544,40 +1551,35 @@ with tabs[2]:
                     plt.tight_layout()
                     st.pyplot(fig)
 
+                # --- RIGHT: BOX PLOT on C* (only this panel switches to closeness) ---
                 with col2:
                     st.markdown("<br><br><br><br><br><br>", unsafe_allow_html=True)
-                    st.markdown("#### 📊 Rank Stability by Design (Box with Mean & Median)")
+                    st.markdown("#### 📊 Closeness Stability by Design (Box with Mean & Median)")
 
-                    # --- Build box stats from rank_df using 1.5*IQR whiskers (pad zero-IQR) ---
-                    # --- Build box stats from rank_df using 1.5*IQR whiskers (include mean) ---
-                    def box_stats(vals: np.ndarray, eps: float = 0.05, center_on_inliers: bool = True):
+                    # Build box stats from closeness_df using 1.5*IQR whiskers (include mean)
+                    def box_stats(vals: np.ndarray, eps: float = 0.01, center_on_inliers: bool = True):
                         v = np.asarray(vals, dtype=float)
                         q1, med, q3 = np.percentile(v, [25, 50, 75])
                         iqr = q3 - q1
                         if iqr < 1e-12:
                             q1, q3 = med - eps, med + eps
                             iqr = q3 - q1
-
                         low_b, high_b = q1 - 1.5 * iqr, q3 + 1.5 * iqr
                         inliers = v[(v >= low_b) & (v <= high_b)]
-
-                        # --- use inliers for mean/median if requested ---
                         center = inliers if (center_on_inliers and inliers.size) else v
                         med_center = float(np.median(center))
                         mean_val   = float(np.mean(center))
-
                         whislo = float(inliers.min()) if inliers.size else float(v.min())
                         whishi = float(inliers.max()) if inliers.size else float(v.max())
                         fliers = v[(v < low_b) | (v > high_b)].tolist()
-
                         return {
                             "q1": float(q1), "q3": float(q3),
-                            "med": med_center,          # median line (inlier-based if chosen)
+                            "med": med_center,
                             "whislo": whislo, "whishi": whishi,
-                            "fliers": fliers, "mean": mean_val  # for showmeans=True
+                            "fliers": fliers, "mean": mean_val
                         }
 
-                    stats = [box_stats(rank_df[w].values) for w in wec_names]
+                    stats = [box_stats(closeness_df[w].values) for w in wec_names]
 
                     from textwrap import fill
                     labels_wrapped = [fill(w, width=16) for w in wec_names]
@@ -1585,97 +1587,89 @@ with tabs[2]:
 
                     fig, ax = plt.subplots(figsize=(4.6, 3.0))
 
-                    # Vertical box plot, show mean/median & outliers
                     bp = ax.bxp(
                         stats,
                         positions=x,
-                        vert=True,                # keep vertical
+                        vert=True,                # vertical boxes
                         showfliers=True,          # draw outliers (+)
-                        showmeans=True,           # draw mean line
-                        meanline=True,
                         widths=0.55,
                         patch_artist=True,
-                        medianprops=dict(color="#c62828", linewidth=1.2),  # red median
-                        meanprops=dict(color="#2e7d32", linewidth=1.2),    # green mean
-                        whiskerprops=dict(color="#2f5ef5", linewidth=0.9),
-                        capprops=dict(color="#2f5ef5", linewidth=0.9),
+                        medianprops=dict(color="#1565C0", linewidth=1.2, linestyle=":", dash_capstyle="round"),  # median
+                        whiskerprops=dict(color="#000", linewidth=0.9, zorder=6),
+                        capprops=dict(color="#000", linewidth=0.9),
                         flierprops=dict(marker="+", markeredgecolor="#d32f2f",
-                        markersize=5, markeredgewidth=0.9)
+                                        markersize=5, markeredgewidth=0.9)
                     )
-                    
-                    for box in bp["boxes"]:
-                        box.set(facecolor="#e8f0ff", edgecolor="#2f5ef5", linewidth=0.9)
 
-                    # Axes cosmetics (unchanged)
+                    # Make box faces transparent and keep them behind the scatter
+                    for box in bp["boxes"]:
+                        box.set(facecolor="none", edgecolor="#000", linewidth=0.9, zorder=4)  # or box.set_alpha(0.25)
+
+                    # Make whiskers/caps/medians not sit above points
+                    for artist in bp["whiskers"] + bp["caps"] + bp["medians"] + bp.get("means", []):
+                        artist.set_zorder(2)
+                    
+                    # --- before the scatter loop ---
+                    from matplotlib import cm
+                    palette = list(cm.get_cmap("tab10").colors)  # 10 distinct colors
+                    # if you have more designs than colors, repeat the palette
+                    if len(palette) < len(wec_names):
+                        reps = int(np.ceil(len(wec_names) / len(palette)))
+                        palette = (palette * reps)[:len(wec_names)]
+
+
+                    # Now overlay the jittered scatter ABOVE the boxes
+                    for i, wec in enumerate(wec_names, start=1):
+                        vals = np.asarray(closeness_df[wec].values, dtype=float)
+                        xj = np.random.normal(loc=i, scale=0.03, size=len(vals))  # jitter for all points
+
+                        # fallback color if `palette` is not defined
+                        color = (palette[i-1] if 'palette' in locals() or 'palette' in globals() else "#1565C0")
+
+                        ax.scatter(
+                            xj, vals,
+                            s=3,              # small dots
+                            alpha=0.12,       # transparent so density shows
+                            color=color,
+                            linewidths=0,     # no edge lines
+                            rasterized=True   # keeps figure light when saving
+                        )
+
                     ax.set_xticks(x)
                     ax.set_xticklabels(labels_wrapped, fontsize=7, rotation=0)
-                    ax.set_ylabel("Rank", fontsize=8)
+                    ax.set_ylabel("Closeness to Ideal (C*)", fontsize=8)
+                    ax.set_ylim(0.0, 1.0)
                     ax.tick_params(axis="y", labelsize=7)
-                    ax.grid(axis="y", linestyle="--", linewidth=0.5, alpha=0.5)
 
-                    # Rank 1 at top, fixed to 0..3.5
-                    ax.set_ylim(3.5, 0)
-                    ax.set_yticks(np.arange(0, 3.51, 0.5))
-
-                    # Legend (proxy artists)
                     from matplotlib.lines import Line2D
                     from matplotlib.patches import Patch
-
                     legend_handles = [
-                        Patch(facecolor="#e8f0ff", edgecolor="#2f5ef5", label="IQR (Q1–Q3)"),
-                        Line2D([], [], color="#c62828", lw=1.2, label="Median"),
-                        Line2D([], [], color="#2e7d32", lw=1.2, label="Mean"),
+                        Patch(facecolor='none', edgecolor="#000", label="IQR (Q1–Q3)"),
+                        Line2D([], [], color="#1565C0", lw=1.2, linestyle=":", dash_capstyle="round", label="Median"),
                         Line2D([], [], marker="+", color="none", markeredgecolor="#d32f2f",
                             markersize=6, markeredgewidth=1.0, label="Outliers"),
                     ]
 
-                    # ⬇️ inside the axes, top-center
                     leg = ax.legend(
                         handles=legend_handles,
-                        loc="upper center",
-                        bbox_to_anchor=(0.5, 0.98),      # y < 1 → inside; tweak 0.94–0.99 as you like
-                        ncol=len(legend_handles),        # horizontal row
-                        fontsize=7,
-                        frameon=True,
-                        framealpha=0.85,
-                        handlelength=1.6,
-                        handletextpad=0.4,
-                        columnspacing=0.8,
-                        borderaxespad=0.2,
-                    )
-
-                    # optional: subtle border
-                    leg.get_frame().set_linewidth(0.6)
-
-                    # If you previously reserved extra top space for an external legend, undo it:
-                    fig.subplots_adjust(top=0.95)   # or just omit this line entirely
-
-                    plt.tight_layout()
-                    # Title above the axes; legend stays inside the plot
-                    fig.suptitle("Ranking Variability by WEC Design", fontsize=9, y=0.99)
-
-                    # legend already inside; keep it just under the top edge
-                    leg = ax.legend(
-                        handles=legend_handles,
-                        loc="upper center",
-                        bbox_to_anchor=(0.5, 0.96),   # inside the plot area
+                        loc="upper left",
+                        bbox_to_anchor=(0.025, 0.98),
                         ncol=len(legend_handles),
                         fontsize=7,
                         frameon=True, framealpha=0.85,
                         handlelength=1.6, handletextpad=0.4, columnspacing=0.8, borderaxespad=0.2,
                     )
 
-                    # leave space for the suptitle
                     fig.subplots_adjust(top=0.88)
+                    fig.suptitle("Closeness Variability by WEC Design", fontsize=9, y=0.99)
                     st.pyplot(fig)
 
+                # --- Kendall's τ distance histogram (UNCHANGED: uses ranks) ---
                 from scipy.stats import kendalltau
 
-                # Get the baseline ranking from result_df
                 baseline_ranking = st.session_state["result_df"]["WEC Design"].tolist()
                 baseline_order = {name: rank for rank, name in enumerate(baseline_ranking)}
 
-                # Compute Kendall's Tau distance for each simulation
                 tau_distances = []
                 for k in range(rank_df.shape[0]):
                     sim_ranking = rank_df.iloc[k].sort_values().index.tolist()
@@ -1697,7 +1691,7 @@ with tabs[2]:
                     st.pyplot(fig)
 
                 with col2:
-                    st.markdown("<br><br><br><br><br><br>", unsafe_allow_html=True)  # adjust number of <br> as needed
+                    st.markdown("<br><br><br><br><br><br>", unsafe_allow_html=True)
                     mean_tau = np.mean(tau_distances)
                     std_tau = np.std(tau_distances)
                     st.markdown("#### 📈 Kendall’s Tau Summary")
@@ -1706,7 +1700,7 @@ with tabs[2]:
                     - **Std Dev:** {std_tau:.5f}
                     """)
 
-                # --- Save Monte Carlo Simulation Results ---
+                # --- Save Monte Carlo Simulation Results (unchanged file names) ---
                 output_dir = os.path.dirname(EXCEL_FILE)
                 rank_csv_path = os.path.join(output_dir, "montecarlo_rank_distributions.csv")
                 tau_csv_path = os.path.join(output_dir, "montecarlo_kendall_tau.csv")
@@ -1720,6 +1714,7 @@ with tabs[2]:
                 st.error(f"❌ Error during Monte Carlo simulation: {e}")
     else:
         st.info("⚠️ Please run the ranking first to enable sensitivity analysis.")
+
 
 
 st.markdown("---")
