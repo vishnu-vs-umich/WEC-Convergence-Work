@@ -244,6 +244,135 @@ def aggregate_whfs_scores(df):
     total = sum(weights.values())
     return {k: v / total for k, v in weights.items()} if total > 0 else {}
 
+def ensure_baseline_ready() -> bool:
+    """
+    Ensure st.session_state has:
+      - 'topsis_matrix' (m×n), 'topsis_themes' (list of themes/criteria),
+      - 'combined_theme_weights' (dict), 'wec_names' (list of alternatives),
+      - 'result_df' (baseline ranking DataFrame), 'display_matrix' (normalized table)
+    Returns True on success, False otherwise.
+    """
+    needed = {"topsis_matrix", "topsis_themes", "combined_theme_weights", "wec_names", "result_df", "display_matrix"}
+    if all(k in st.session_state for k in needed):
+        return True
+
+    try:
+        # --- Load AHP Decision Matrix (required) ---
+        ahp_df = pd.read_excel(EXCEL_FILE, sheet_name="AHP Decision Matrix", index_col=0)
+
+        # --- Load Preliminary Survey theme weights (optional but preferred) ---
+        try:
+            prelim_df = pd.read_excel("BI_Preliminary_Survey.xlsx")
+            prelim_df = prelim_df.dropna(subset=["Theme Percentage %"])
+            prelim_theme_weights = prelim_df.groupby("Theme")["Theme Percentage %"].mean()
+            prelim_theme_weights /= prelim_theme_weights.sum()
+        except Exception:
+            prelim_theme_weights = pd.Series(dtype=float)
+
+        # --- Load Community WHFS-derived theme weights (optional) ---
+        try:
+            comm_ws, _ = read_excel("Community Feedback Tab")
+            comm_df = pd.DataFrame(comm_ws.values)
+            whfs_theme_weights = {}
+            if not comm_df.empty:
+                comm_df.columns = comm_df.iloc[0]
+                comm_df = comm_df[1:]
+
+                whfs_question_map = {
+                    "Q3 WHFS": "Functional Efficiency",
+                    "Q6 WHFS": "Functional Efficiency",
+                    "Q7 WHFS": "Environmental Sustainability",
+                    "Q8 WHFS": "Sense of Place",
+                    "Q9 WHFS": "Community Prosperity",
+                    "Q11 WHFS": "Marine Space Utilization"
+                }
+
+                from ast import literal_eval
+                whfs_theme_agg = {t: [] for t in set(whfs_question_map.values())}
+                for _, row in comm_df.iterrows():
+                    for q, theme in whfs_question_map.items():
+                        if q in row and pd.notna(row[q]):
+                            try:
+                                scores = literal_eval(row[q]) if isinstance(row[q], str) else row[q]
+                                for level, wt in scores:
+                                    whfs_theme_agg[theme].append(level * wt)
+                            except Exception:
+                                pass
+
+                whfs_theme_weights = {t: np.mean(v) for t, v in whfs_theme_agg.items() if v}
+                total = sum(whfs_theme_weights.values())
+                if total > 0:
+                    whfs_theme_weights = {k: v / total for k, v in whfs_theme_weights.items()}
+        except Exception:
+            whfs_theme_weights = {}
+
+        # --- Determine full theme set ---
+        # Themes present in AHP Decision Matrix via "Theme - Subcriterion" column prefixes
+        ahp_themes = []
+        for c in ahp_df.columns:
+            if isinstance(c, str) and " - " in c:
+                ahp_themes.append(c.split(" - ", 1)[0])
+        ahp_themes = sorted(set(ahp_themes))
+
+        # Prefer union of prelim + whfs; if both empty, fall back to AHP themes
+        all_themes = sorted(set(prelim_theme_weights.index).union(whfs_theme_weights.keys()))
+        if not all_themes:
+            all_themes = ahp_themes
+
+        # --- Combine theme weights (50/50) or fallback to equal if needed ---
+        combined_theme_weights = {
+            t: 0.5 * float(prelim_theme_weights.get(t, 0.0)) + 0.5 * float(whfs_theme_weights.get(t, 0.0))
+            for t in all_themes
+        }
+        s = sum(combined_theme_weights.values())
+        if s <= 0:
+            # equal weights over themes present in AHP
+            combined_theme_weights = {t: 1.0 / len(all_themes) for t in all_themes}
+        else:
+            combined_theme_weights = {t: v / s for t, v in combined_theme_weights.items()}
+
+        # --- Aggregate subcriteria by theme (unweighted-by-theme averages) ---
+        grouped_scores = {}
+        for theme in combined_theme_weights:
+            sub_cols = [c for c in ahp_df.columns if isinstance(c, str) and c.startswith(theme)]
+            if sub_cols:
+                grouped_scores[theme] = ahp_df[sub_cols].mean(axis=1)
+
+        if not grouped_scores:
+            return False
+
+        final_matrix = pd.DataFrame(grouped_scores)           # rows = alternatives, cols = themes
+        display_matrix = final_matrix.div(final_matrix.sum(axis=1), axis=0).fillna(0.0)
+
+        used_themes = [t for t in all_themes if t in final_matrix.columns]
+        X = final_matrix[used_themes].to_numpy(dtype=float)
+
+        w = np.array([combined_theme_weights[t] for t in used_themes], dtype=float)
+        w = w / w.sum() if w.sum() > 0 else np.ones_like(w) / len(w)
+
+        # --- Baseline TOPSIS + ranking (for Kendall’s τ histogram etc.) ---
+        closeness, d_pos, d_neg, Aplus_xy, Aminus_xy = topsis_with_distances(X, w)
+        result_df = (
+            pd.DataFrame({"WEC Design": final_matrix.index, "Closeness to Ideal": closeness})
+            .sort_values(by="Closeness to Ideal", ascending=False)
+            .reset_index(drop=True)
+        )
+        result_df.insert(0, "Rank", result_df.index + 1)
+
+        # --- Cache in session_state ---
+        st.session_state["topsis_matrix"] = X
+        st.session_state["topsis_themes"] = used_themes
+        st.session_state["combined_theme_weights"] = {t: float(combined_theme_weights[t]) for t in used_themes}
+        st.session_state["wec_names"] = list(final_matrix.index)
+        st.session_state["result_df"] = result_df
+        st.session_state["display_matrix"] = display_matrix
+
+        return True
+
+    except Exception:
+        return False
+
+
 def topsis(matrix, weights):
     norm = np.linalg.norm(matrix, axis=0)
     norm_matrix = matrix / norm
@@ -1192,6 +1321,225 @@ with tabs[2]:
                     st.info(f"Expertise summary unavailable ({e}).")
 
 
+            # --- NEW ROW (replace the radar sensitivity row): Weight sweep curves ---
+            st.markdown("### Weight sweep: $C^{*}$ vs individual theme weight (one panel per design)")
+
+            try:
+                # ✅ Make sure TOPSIS inputs exist (rebuilds from Excel if user skipped “Run Ranking”)
+                if not ensure_baseline_ready():
+                    raise KeyError("topsis_matrix")
+
+                X = st.session_state["topsis_matrix"]                        # (m × n)
+                used_themes = st.session_state["topsis_themes"]
+                wec_names   = st.session_state["wec_names"]
+                w_base = np.array([st.session_state["combined_theme_weights"][t] for t in used_themes], float)
+                w_base = w_base / w_base.sum() if w_base.sum() > 0 else np.ones_like(w_base) / len(w_base)
+
+                # Preferred theme order + abbreviations for legend
+                preferred = ["Functional Efficiency", "Environmental Sustainability",
+                            "Community Prosperity", "Sense of Place", "Marine Space Utilization"]
+                theme_order = [t for t in preferred if t in used_themes] + [t for t in used_themes if t not in preferred]
+                order_idx = [used_themes.index(t) for t in theme_order]
+                theme_abbrev = {
+                    "Functional Efficiency": "FE",
+                    "Environmental Sustainability": "ES",
+                    "Community Prosperity": "CP",
+                    "Sense of Place": "SP",
+                    "Marine Space Utilization": "MSU",
+                }
+
+                # Reallocate weights: set w_j = x, keep others proportional to baseline, renormalize to 1
+                def reweight(j: int, x: float) -> np.ndarray:
+                    w_new = np.zeros_like(w_base)
+                    w_new[j] = x
+                    other = np.delete(w_base, j)
+                    other_ratios = (other / other.sum()) if other.sum() > 0 else np.ones_like(other) / len(other)
+                    w_new[np.arange(len(w_base)) != j] = (1.0 - x) * other_ratios
+                    return w_new
+
+                # Sweep each theme weight from 0 → 0.95 and record C* for every alternative
+                NPTS = 41
+                w_grid = np.linspace(0.0, 0.95, NPTS)
+
+                # curves[alt_idx] -> list (over themes) of arrays length NPTS
+                curves = {i: [] for i in range(X.shape[0])}
+                for j in order_idx:
+                    # NPTS × m (each row is C* at a given x for all alternatives)
+                    Ys = np.vstack([topsis(X, reweight(j, xval)) for xval in w_grid])
+                    for i in range(X.shape[0]):
+                        curves[i].append(Ys[:, i])
+
+                # Helper: compact alternative names
+                def short_alt(nm: str) -> str:
+                    s = nm.strip().lower()
+                    if "point absorber" in s: return "PA"
+                    if "oscillating water column" in s: return "OWC"
+                    if "oscillating wave surge" in s or "oscillating surge" in s: return "OWSC"
+                    return nm
+
+                # Three side-by-side panels (or fewer if you have <3 alternatives)
+                n_panels = min(3, len(wec_names))
+                cols = st.columns(n_panels)
+
+                from matplotlib import cm
+
+                theme_colors = list(cm.get_cmap("tab10").colors)
+                if len(theme_colors) < len(theme_order):
+                    reps = int(np.ceil(len(theme_order) / len(theme_colors)))
+                    theme_colors = (theme_colors * reps)[:len(theme_order)]
+
+                # NEW: distinct linestyles (cycled across themes)
+                # Keep your existing colors + LINE_STYLES
+                LINE_STYLES = ['-'] * len(theme_order)          # all solid
+                MARKERS     = ['o', 's', '^', 'D', 'P']         # circle, square, triangle, diamond, pentagon
+
+                for panel_i, col in enumerate(cols):
+                    with col:
+                        fig, ax = plt.subplots(figsize=(4.2, 3.0))
+                        for k, j in enumerate(order_idx):
+                            lab    = theme_abbrev.get(theme_order[k], theme_order[k])
+                            color  = theme_colors[k]
+                            marker = MARKERS[k % len(MARKERS)]
+                            ax.plot(
+                                w_grid, curves[panel_i][k],
+                                label=lab,
+                                color=color,
+                                linestyle='-', linewidth=1.8,          # solid line
+                                marker=marker, markersize=4.5,         # solid markers
+                                markerfacecolor=color, markeredgecolor=color,
+                                markeredgewidth=0.0,
+                                markevery=max(1, len(w_grid)//10),
+                                zorder=3
+                            )
+                            ax.axvline(w_base[j], linestyle="--", linewidth=0.8, alpha=0.35,
+                                    color=color, zorder=2)
+
+                        ax.set_title(f"{short_alt(wec_names[panel_i])}: $C^{{*}}$ vs $w_j$", fontsize=9)
+                        ax.set_xlabel(r"Theme weight $w_j$", fontsize=8)
+                        ax.set_ylabel(r"Closeness to ideal $C^{*}$", fontsize=8)
+                        ax.set_ylim(0.0, 1.0)
+                        ax.grid(True, linestyle="--", linewidth=0.5, alpha=0.6, zorder=1)
+                        ax.legend(title="Theme", fontsize=7, title_fontsize=7, ncol=2, loc="lower right", handlelength=2.6)
+                        st.pyplot(fig)
+
+
+            except KeyError as e:
+                st.info(f"Please run the ranking first (missing {e.args[0]}).")
+            except Exception as e:
+                st.info(f"Weight–closeness sweep unavailable ({e}).")
+
+
+            st.markdown("### Local sensitivity: $\\partial C^{*}/\\partial w_j$ vs $w_j$ (one panel per design)")
+
+            try:
+                # Ensure we have matrix, theme order, names, and weights (use your ensure_baseline_ready() if you have it)
+                needed = {"topsis_matrix", "topsis_themes", "wec_names", "combined_theme_weights"}
+                if not needed.issubset(st.session_state):
+                    raise KeyError("topsis_matrix")
+
+                X = st.session_state["topsis_matrix"]                        # (m × n)
+                used_themes = st.session_state["topsis_themes"]
+                wec_names   = st.session_state["wec_names"]
+                w_base = np.array([st.session_state["combined_theme_weights"][t] for t in used_themes], float)
+                w_base = w_base / w_base.sum() if w_base.sum() > 0 else w_base
+
+                # Preferred theme order + abbreviations for legend
+                preferred = ["Functional Efficiency", "Environmental Sustainability",
+                            "Community Prosperity", "Sense of Place", "Marine Space Utilization"]
+                theme_order = [t for t in preferred if t in used_themes] + [t for t in used_themes if t not in preferred]
+                order_idx = [used_themes.index(t) for t in theme_order]
+                theme_abbrev = {
+                    "Functional Efficiency": "FE",
+                    "Environmental Sustainability": "ES",
+                    "Community Prosperity": "CP",
+                    "Sense of Place": "SP",
+                    "Marine Space Utilization": "MSU",
+                }
+
+                # Same reweight rule you used in the sweep: put x on j, keep others proportional to baseline
+                def reweight(j: int, x: float) -> np.ndarray:
+                    w_new = np.zeros_like(w_base)
+                    w_new[j] = x
+                    other = np.delete(w_base, j)
+                    other_ratios = (np.ones_like(other)/len(other)) if other.sum() <= 0 else (other/other.sum())
+                    w_new[np.arange(len(w_base)) != j] = (1.0 - x) * other_ratios
+                    return w_new
+
+                # Grid in w_j, small step for central finite differences
+                w_grid = np.linspace(0.0, 0.95, 41)
+                h = 0.01  # step for ∂/∂w_j
+
+                # sens[alt_idx] -> list over themes of arrays (len = len(w_grid))
+                sens = {i: [] for i in range(X.shape[0])}
+                for j in order_idx:
+                    E = np.zeros((w_grid.size, X.shape[0]))
+                    for t, x in enumerate(w_grid):
+                        # central diff where possible, one-sided at boundaries
+                        xf = min(0.95, x + h)
+                        xb = max(0.0, x - h)
+                        if xf == xb:
+                            C0 = topsis(X, reweight(j, x))
+                            Cf = topsis(X, reweight(j, xf))
+                            E[t, :] = (Cf - C0) / max(1e-12, (xf - x))
+                        else:
+                            Cf = topsis(X, reweight(j, xf))
+                            Cb = topsis(X, reweight(j, xb))
+                            E[t, :] = (Cf - Cb) / max(1e-12, (xf - xb))
+                    for i in range(X.shape[0]):
+                        sens[i].append(E[:, i])
+
+                # Helper: short alt names
+                def short_alt(nm: str) -> str:
+                    s = nm.strip().lower()
+                    if "point absorber" in s: return "PA"
+                    if "oscillating water column" in s: return "OWC"
+                    if "oscillating wave surge" in s or "oscillating surge" in s: return "OWSC"
+                    return nm
+
+                # Three side-by-side panels (PA, OWC, OWSC)
+                cols = st.columns(3)
+                from matplotlib import cm
+                theme_colors = list(cm.get_cmap("tab10").colors)
+                if len(theme_colors) < len(theme_order):
+                    reps = int(np.ceil(len(theme_order) / len(theme_colors)))
+                    theme_colors = (theme_colors * reps)[:len(theme_order)]
+
+                # Solid filled markers + solid lines
+                MARKERS = ['o', 's', '^', 'D', 'P', 'v', '>', '<', 'X', '*']  # plenty to cycle through
+
+                for panel_i, col in enumerate(cols):
+                    with col:
+                        fig, ax = plt.subplots(figsize=(4.2, 3.0))
+                        for k, j in enumerate(order_idx):
+                            lab    = theme_abbrev.get(theme_order[k], theme_order[k])
+                            color  = theme_colors[k]
+                            marker = MARKERS[k % len(MARKERS)]
+
+                            ax.plot(
+                                w_grid, sens[panel_i][k],
+                                label=lab,
+                                color=color,
+                                linestyle='-', linewidth=1.8,        # solid line
+                                marker=marker, markersize=4.5,       # solid markers
+                                markerfacecolor=color, markeredgecolor=color,
+                                markeredgewidth=0.0,
+                                markevery=max(1, len(w_grid)//10),
+                                zorder=3
+                            )
+
+                        ax.axhline(0, linestyle="--", linewidth=0.6, color="0.4", zorder=1)
+                        ax.set_title(f"{short_alt(wec_names[panel_i])}: $\\partial C^*/\\partial w_j$ vs $w_j$", fontsize=9)
+                        ax.set_xlabel(r"Theme weight $w_j$", fontsize=8)
+                        ax.set_ylabel(r"Local sensitivity $\partial C^{*}/\partial w_j$", fontsize=8)
+                        ax.grid(True, linestyle="--", linewidth=0.5, alpha=0.6, zorder=1)
+                        ax.legend(title="Theme", fontsize=7, title_fontsize=7, ncol=2, loc="best", handlelength=2.6)
+                        st.pyplot(fig)
+
+            except KeyError as e:
+                st.info(f"Please run the ranking first (missing {e.args[0]}).")
+            except Exception as e:
+                st.info(f"Sensitivity plots unavailable ({e}).")
+
             # === Individual Radar Charts for Each WEC Design ===
             from textwrap import fill
             labels = list(display_matrix.columns.drop("Total Score"))
@@ -1416,7 +1764,6 @@ with tabs[2]:
 
             with col2:
                 # Add vertical space to roughly center-align with col1 chart
-                st.markdown("<br><br><br><br><br><br>", unsafe_allow_html=True)  # adjust number of <br> as needed
                 st.markdown("#### 🏆 TOPSIS Final Rankings")
                 st.dataframe(result_df.set_index("Rank"), use_container_width=True)
 
