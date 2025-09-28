@@ -15,6 +15,9 @@ import os
 import matplotlib.cm as cm
 import matplotlib.colors as mcolors
 import re
+# Plotly (interactive 3D)
+import plotly.express as px
+import plotly.graph_objects as go
 
 from openai import AzureOpenAI
 
@@ -440,7 +443,7 @@ st.markdown(
     """,
     unsafe_allow_html=True
 )
-tabs = st.tabs(["1️⃣ Expert Input", "2️⃣ Community Feedback", "3️⃣ Final Ranking"])
+tabs = st.tabs(["1️⃣ Expert Input", "2️⃣ Community Feedback", "3️⃣ Final Ranking", "4️⃣ 3D Metrics"])
 
 # === TAB 1: EXPERT INPUT ===
 with tabs[0]:
@@ -2229,6 +2232,220 @@ with tabs[2]:
                 st.error(f"❌ Error during Monte Carlo simulation: {e}")
     else:
         st.info("⚠️ Please run the ranking first to enable sensitivity analysis.")
+
+# === TAB 4: INTERACTIVE 3D METRICS ===
+with tabs[3]:
+    import plotly.graph_objects as go
+    import pandas as pd  # needed for pd.DataFrame below
+
+    st.subheader("Interactive 3D Metrics: TRL vs 1/LCOE vs Social Acceptance (C★)")
+
+    # Ensure baseline TOPSIS results are available
+    if not ensure_baseline_ready():
+        st.info("Please run the ranking (Tab 3) at least once so the Social Acceptance scores (C★) are available.")
+    else:
+        # Pull names and C★ (closeness) from session
+        wec_names = st.session_state.get(
+            "wec_names",
+            ["Point Absorber", "Oscillating Water Column", "Oscillating Wave Surge Flap"]
+        )
+        result_df = st.session_state.get("result_df", None)
+
+        if result_df is not None and not result_df.empty:
+            # Adjust these keys if your result_df uses different column names
+            cstar_map = {row["WEC Design"]: float(row["Closeness to Ideal"]) for _, row in result_df.iterrows()}
+        else:
+            st.warning("TOPSIS results not found in session. Run the ranking first.")
+            cstar_map = {}
+
+        st.markdown(
+            "Enter **Technology Readiness Level (TRL)** and **LCOE** for each design. "
+            "**All fields are required**. LCOE will be inverted automatically for the Y-axis (1 / LCOE)."
+        )
+        c1, c2, c3 = st.columns(3)
+
+        def design_inputs(col, name, key_prefix, default_trl, default_lcoe):
+            with col:
+                st.markdown(f"**{name}**")
+                trl = st.number_input(
+                    "TRL (1–9)", min_value=1, max_value=9, step=1,
+                    key=f"{key_prefix}_trl", value=default_trl
+                )
+                # Show only 2 decimals, step by 0.01, and force-round the value
+                lcoe = st.number_input(
+                    "LCOE (> 0)", min_value=0.01, step=0.01, format="%.2f",
+                    key=f"{key_prefix}_lcoe", value=float(f"{default_lcoe:.2f}")
+                )
+                lcoe = float(f"{lcoe:.2f}")  # hard-round to 2 decimals
+                return trl, lcoe
+
+        # Defaults (edit as you like)
+        d1_trl, d1_lcoe = design_inputs(c1, "Point Absorber", "wec1", default_trl=5, default_lcoe=5.336989)
+        d2_trl, d2_lcoe = design_inputs(c2, "Oscillating Wave Surge Flap", "wec2", default_trl=4, default_lcoe=3.896567)
+        d3_trl, d3_lcoe = design_inputs(c3, "Oscillating Water Column", "wec3", default_trl=8, default_lcoe=5.581421)
+
+        show_guides = st.checkbox("Show guide lines to all three axes (XY, XZ, YZ planes)", value=True)
+
+        # Validate inputs
+        valid = True
+        for nm, trl_val, lcoe_val in [
+            (wec_names[0], d1_trl, d1_lcoe),
+            (wec_names[1], d2_trl, d2_lcoe),
+            (wec_names[2], d3_trl, d3_lcoe),
+        ]:
+            if nm not in cstar_map:
+                st.error(f"Missing Social Acceptance (C★) for '{nm}'. Please run the ranking.")
+                valid = False
+            if lcoe_val is None or lcoe_val <= 0:
+                st.error(f"LCOE for '{nm}' must be greater than 0.")
+                valid = False
+
+        if st.button("🚀 Generate 3D Plot") and valid:
+            # Assemble plotting data
+            df_3d = pd.DataFrame([
+                {
+                    "Design": wec_names[0],
+                    "TRL": int(d1_trl),
+                    "LCOE": float(d1_lcoe),
+                    "LCOE_inv": 1.0 / float(d1_lcoe),
+                    "C★": float(cstar_map.get(wec_names[0], 0.0))
+                },
+                {
+                    "Design": wec_names[1],
+                    "TRL": int(d2_trl),
+                    "LCOE": float(d2_lcoe),
+                    "LCOE_inv": 1.0 / float(d2_lcoe),
+                    "C★": float(cstar_map.get(wec_names[1], 0.0))
+                },
+                {
+                    "Design": wec_names[2],
+                    "TRL": int(d3_trl),
+                    "LCOE": float(d3_lcoe),
+                    "LCOE_inv": 1.0 / float(d3_lcoe),
+                    "C★": float(cstar_map.get(wec_names[2], 0.0))
+                }
+            ])
+
+            st.markdown("#### Input Summary")
+            st.dataframe(
+                df_3d.rename(columns={"LCOE_inv": "1 / LCOE", "C★": "Social Acceptance (C★)"}).set_index("Design")
+            )
+
+            from math import ceil
+            # --- Axis ranges ---
+            x_max = 9
+
+            # Round UP the max of 1/LCOE to the next 0.05 step (e.g., 0.26 -> 0.30)
+            y_raw_max = float(df_3d["LCOE_inv"].max()) if df_3d["LCOE_inv"].max() > 0 else 0.0
+            y_step = 0.05
+            y_max = max(y_step, ceil(y_raw_max / y_step) * y_step)  # ensure at least one tick
+            z_max = 1.0
+
+            # Axis/theme colors
+            x_color = "#FF00FF"  # magenta (TRL)
+            y_color = "#2E7D32"  # green (1/LCOE)
+            z_color = "#1565C0"  # blue (C★)
+
+            # Build figure
+            fig = go.Figure()
+
+            # Marker colors per design
+            color_map = {
+                wec_names[0]: "#E53935",  # red
+                wec_names[1]: "#43A047",  # green
+                wec_names[2]: "#1E88E5",  # blue
+            }
+
+            # Add points + labels
+            for _, r in df_3d.iterrows():
+                fig.add_trace(go.Scatter3d(
+                    x=[r["TRL"]],
+                    y=[r["LCOE_inv"]],
+                    z=[r["C★"]],
+                    mode="markers+text",
+                    text=[r["Design"]],
+                    textposition="top center",
+                    marker=dict(size=7, color=color_map.get(r["Design"], "#555"),
+                                line=dict(width=1, color="black")),
+                    name=r["Design"],
+                    hovertemplate=(
+                        "<b>%{text}</b><br>TRL: %{x}<br>"
+                        f"LCOE: {r['LCOE']:.6f}<br>"
+                        "1/LCOE: %{y:.4f}<br>"
+                        "C★: %{z:.4f}<extra></extra>"
+                    )
+                ))
+
+                # Optional orthogonal guide lines from the point to the three planes
+                if show_guides:
+                    x0, y0, z0 = r["TRL"], r["LCOE_inv"], r["C★"]
+                    fig.add_trace(go.Scatter3d(
+                        x=[x0, x0], y=[y0, y0], z=[0, z0],
+                        mode="lines", line=dict(width=2, dash="dot", color="rgba(0,0,0,0.35)"),
+                        showlegend=False, hoverinfo="skip"
+                    ))
+                    fig.add_trace(go.Scatter3d(
+                        x=[x0, x0], y=[0, y0], z=[z0, z0],
+                        mode="lines", line=dict(width=2, dash="dot", color="rgba(0,0,0,0.35)"),
+                        showlegend=False, hoverinfo="skip"
+                    ))
+                    fig.add_trace(go.Scatter3d(
+                        x=[0, x0], y=[y0, y0], z=[z0, z0],
+                        mode="lines", line=dict(width=2, dash="dot", color="rgba(0,0,0,0.35)"),
+                        showlegend=False, hoverinfo="skip"
+                    ))
+
+            # === Colored axis spines (replace cones) ===
+            # X axis (TRL) line in magenta
+            fig.add_trace(go.Scatter3d(
+                x=[0, x_max], y=[0, 0], z=[0, 0],
+                mode="lines", line=dict(color=x_color, width=6),
+                showlegend=False, hoverinfo="skip"
+            ))
+            # Y axis (1/LCOE) line in green
+            fig.add_trace(go.Scatter3d(
+                x=[0, 0], y=[0, y_max], z=[0, 0],
+                mode="lines", line=dict(color=y_color, width=6),
+                showlegend=False, hoverinfo="skip"
+            ))
+            # Z axis (C★) line in blue
+            fig.add_trace(go.Scatter3d(
+                x=[0, 0], y=[0, 0], z=[0, z_max],
+                mode="lines", line=dict(color=z_color, width=6),
+                showlegend=False, hoverinfo="skip"
+            ))
+            # ===========================================
+
+            # Axis styling/labels (label colors match the axis spines)
+            fig.update_layout(
+                scene=dict(
+                    xaxis=dict(
+                        title=dict(text="Technology Readiness Level (TRL)", font=dict(color=x_color)),
+                        range=[0, x_max],
+                        gridcolor="lightgray", zerolinecolor="lightgray", tickfont=dict(color="#333"),
+                    ),
+                    yaxis=dict(
+                        title=dict(text="LCOE (inverted → 1 / LCOE)", font=dict(color=y_color)),
+                        range=[0, y_max],
+                        dtick=0.05,          # <-- 0.05 graduations
+                        tick0=0,             # start ticks at 0
+                        tickformat=".2f",    # nice 2-decimal tick labels
+                        gridcolor="lightgray", zerolinecolor="lightgray", tickfont=dict(color="#333"),
+                    ),
+                    zaxis=dict(
+                        title=dict(text="Social Acceptance (C★)", font=dict(color=z_color)),
+                        range=[0, z_max],
+                        gridcolor="lightgray", zerolinecolor="lightgray", tickfont=dict(color="#333"),
+                    ),
+                    aspectmode="cube",
+                ),
+                legend=dict(title="Design", orientation="h", yanchor="bottom", y=1.02, xanchor="left", x=0),
+                margin=dict(l=0, r=0, t=20, b=0),
+                height=640,
+            )
+
+            st.plotly_chart(fig, use_container_width=True)
+
 
 st.markdown("---")
 st.markdown("### ⚠️ Danger Zone")
