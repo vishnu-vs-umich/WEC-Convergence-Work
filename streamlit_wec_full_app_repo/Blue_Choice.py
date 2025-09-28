@@ -14,6 +14,7 @@ import os
 import os
 import matplotlib.cm as cm
 import matplotlib.colors as mcolors
+import re
 
 from openai import AzureOpenAI
 
@@ -866,6 +867,114 @@ with tabs[0]:
 import json
 from datetime import datetime
 
+def plot_pis_nis_contributions_row(
+    topsis_matrix: np.ndarray,
+    weights: np.ndarray,
+    used_themes: list,
+    wec_names: list,
+    excel_path: str | None = None,
+    sheet_name: str = "PIS_NIS_Contrib",
+    topk: int = 3,
+):
+    """
+    Compute per-criterion PIS/NIS squared contributions and render a new Streamlit row of plots:
+      • Top 'weakness' drivers: largest shares of S_i^+  (distance to A+)
+      • Top 'strength' drivers: largest shares of S_i^-  (distance to A-)
+    Also (optionally) saves a tidy table to Excel.
+
+    Inputs:
+      topsis_matrix : (m×n) unweighted scores (rows=alternatives, cols=criteria)
+      weights       : (n,) community weights for criteria (sum to 1)
+      used_themes   : list of criterion names (length n)
+      wec_names     : list of alternative names (length m)
+      excel_path    : path to Excel file; if provided, saves a tidy sheet
+      topk          : number of top contributors to show in plots
+    """
+    import numpy as np
+    import pandas as pd
+    import matplotlib.pyplot as plt
+    from textwrap import fill
+    import streamlit as st
+
+    # --- Build weighted, normalized matrix v_ij ---
+    col_norms = np.linalg.norm(topsis_matrix, axis=0)
+    safe_norms = np.where(col_norms == 0, 1.0, col_norms)
+    norm_matrix = topsis_matrix / safe_norms
+    weighted = norm_matrix * weights  # v_ij
+
+    # --- A+ (ideal) and A- (anti-ideal) for benefit criteria ---
+    ideal = np.max(weighted, axis=0)
+    anti  = np.min(weighted, axis=0)
+
+    # --- Squared-term contributions ---
+    cpos = (weighted - ideal[np.newaxis, :])**2  # (v_ij - v_j^+)^2  → weaknesses
+    cneg = (weighted - anti [np.newaxis, :])**2  # (v_ij - v_j^-)^2  → strengths
+
+    # Row-wise percentages
+    sum_pos = cpos.sum(axis=1, keepdims=True)
+    sum_neg = cneg.sum(axis=1, keepdims=True)
+    pct_pos = np.divide(cpos, np.where(sum_pos == 0, 1.0, sum_pos), where=True)
+    pct_neg = np.divide(cneg, np.where(sum_neg == 0, 1.0, sum_neg), where=True)
+
+    # Optional: save tidy table to Excel
+    if excel_path:
+        rows = []
+        for i, wec in enumerate(wec_names):
+            for j, crit in enumerate(used_themes):
+                rows.append({
+                    "WEC Design": wec,
+                    "Criterion": crit,
+                    "PIS_sq": float(cpos[i, j]),
+                    "PIS_pct": float(pct_pos[i, j]),
+                    "NIS_sq": float(cneg[i, j]),
+                    "NIS_pct": float(pct_neg[i, j]),
+                })
+        tidy = pd.DataFrame(rows)
+        try:
+            with pd.ExcelWriter(excel_path, engine="openpyxl", mode="a", if_sheet_exists="replace") as w:
+                tidy.to_excel(w, sheet_name=sheet_name, index=False)
+        except Exception as e:
+            st.info(f"(Optional) Could not write PIS/NIS contributions to Excel: {e}")
+
+    # --- New row: per-design plots ---
+    st.markdown("### 🔎 Criterion-level drivers of each design’s score (PIS vs NIS)")
+    wrapped = {t: fill(t, width=18) for t in used_themes}
+    cols = st.columns(len(wec_names))
+
+    for i, col in enumerate(cols):
+        with col:
+            # Sort by share, descending
+            pos_series = pd.Series(pct_pos[i, :], index=used_themes).sort_values(ascending=False).head(topk)
+            neg_series = pd.Series(pct_neg[i, :], index=used_themes).sort_values(ascending=False).head(topk)
+
+            fig, axes = plt.subplots(2, 1, figsize=(4.2, 3.2))
+
+            # Weaknesses (distance to A+ contributors)
+            axes[0].bar([wrapped[k] for k in pos_series.index], pos_series.values)
+            axes[0].set_title(f"{wec_names[i]} — Weakest criteria (share of $S_i^+$)", fontsize=8)
+            axes[0].set_ylabel("Share", fontsize=7)
+            axes[0].tick_params(axis='x', rotation=35, labelsize=6)
+            axes[0].tick_params(axis='y', labelsize=6)
+            axes[0].set_ylim(0, max(0.5, pos_series.values.max() * 1.2))
+
+            # Strengths (distance to A− contributors)
+            axes[1].bar([wrapped[k] for k in neg_series.index], neg_series.values)
+            axes[1].set_title(f"{wec_names[i]} — Strongest criteria (share of $S_i^-$)", fontsize=8)
+            axes[1].set_ylabel("Share", fontsize=7)
+            axes[1].tick_params(axis='x', rotation=35, labelsize=6)
+            axes[1].tick_params(axis='y', labelsize=6)
+            axes[1].set_ylim(0, max(0.5, neg_series.values.max() * 1.2))
+
+            plt.tight_layout()
+            st.pyplot(fig)
+
+    # Return raw arrays if you want to reuse them elsewhere
+    return {
+        "v": weighted, "ideal": ideal, "anti": anti,
+        "PIS_sq": cpos, "NIS_sq": cneg,
+        "PIS_pct": pct_pos, "NIS_pct": pct_neg,
+    }
+
 with tabs[1]:
     st.subheader("🗣️ Community Survey: Views on Wave Energy for Beaver Island")
 
@@ -1319,6 +1428,19 @@ with tabs[2]:
 
                 except Exception as e:
                     st.info(f"Expertise summary unavailable ({e}).")
+            # --- NEW ROW: per-criterion contribution plots (PIS/NIS) ---
+            try:
+                plot_pis_nis_contributions_row(
+                    topsis_matrix=topsis_matrix,
+                    weights=weights,
+                    used_themes=used_themes,
+                    wec_names=list(final_matrix.index),
+                    excel_path=EXCEL_FILE,           # or None to skip saving
+                    sheet_name="PIS_NIS_Contrib",
+                    topk=3
+                )
+            except Exception as e:
+                st.info(f"PIS/NIS contribution row unavailable ({e}).")
 
 
             # --- NEW ROW (replace the radar sensitivity row): Weight sweep curves ---
@@ -1420,8 +1542,17 @@ with tabs[2]:
                         ax.set_ylim(0.0, 1.0)
                         ax.grid(True, linestyle="--", linewidth=0.5, alpha=0.6, zorder=1)
                         ax.legend(title="Theme", fontsize=7, title_fontsize=7, ncol=2, loc="lower right", handlelength=2.6)
-                        st.pyplot(fig)
+                        # --- save each panel in the project folder, high-def ---
+                        try:
+                            out_dir = Path(__file__).parent       # same folder as this Streamlit app
+                        except NameError:
+                            out_dir = Path.cwd()                  # fallback for interactive runs
 
+                        alt_name = short_alt(wec_names[panel_i])
+                        safe_alt = re.sub(r'[^A-Za-z0-9_-]+', '_', alt_name).strip('_')
+                        png_path = out_dir / f"weight_sweep_{safe_alt}.png"
+                        fig.savefig(png_path, dpi=600, bbox_inches="tight", facecolor="white")
+                        st.pyplot(fig)
 
             except KeyError as e:
                 st.info(f"Please run the ranking first (missing {e.args[0]}).")
@@ -1539,6 +1670,7 @@ with tabs[2]:
                 st.info(f"Please run the ranking first (missing {e.args[0]}).")
             except Exception as e:
                 st.info(f"Sensitivity plots unavailable ({e}).")
+                
 
             # === Individual Radar Charts for Each WEC Design ===
             from textwrap import fill
@@ -1599,7 +1731,7 @@ with tabs[2]:
                 fig.savefig(image_path, dpi=300, bbox_inches='tight')
 
                 cols[i].pyplot(fig)
-
+        
             # === Pairwise Comparison Matrices (fraction / matrix style) ===
             st.markdown("### 🔢 Theme-wise Pairwise Comparison Matrices (Fraction Form)")
 
@@ -1865,12 +1997,12 @@ with tabs[2]:
                 rank_df = pd.DataFrame(rank_distributions)            # K × M of ranks
                 closeness_df = pd.DataFrame(closeness_distributions)  # K × M of C*
 
-                col1, col2 = st.columns([1.5, 1])  # Adjust width ratio as needed
+                col1, col2 = st.columns([1, 1])  # Adjust width ratio as needed
 
-                # --- LEFT: RANK stripplot (unchanged) ---
+                # --- LEFT: RANK stripplot ---
                 with col1:
                     st.markdown("#### 📦 Rank Distribution Across Simulations")
-                    fig, ax = plt.subplots(figsize=(6, 3.5))
+                    fig, ax = plt.subplots(figsize=(5.5, 3.2))
 
                     sns.stripplot(
                         data=rank_df[wec_names],
@@ -1896,12 +2028,17 @@ with tabs[2]:
                     ax.tick_params(axis='y', labelsize=7)
                     ax.set_ylim(0.5, len(wec_names) + 1)
                     plt.tight_layout()
+
+                    # NEW — save HD PNG
+                    output_dir = os.path.dirname(EXCEL_FILE)  # reuse your existing output folder
+                    rank_png_path = os.path.join(output_dir, "rank_stability.png")
+                    fig.savefig(rank_png_path, dpi=300, bbox_inches="tight")
+
                     st.pyplot(fig)
 
-                # --- RIGHT: BOX PLOT on C* (only this panel switches to closeness) ---
+                # --- RIGHT: BOX PLOT on C* (closeness) ---
                 with col2:
-                    st.markdown("<br><br><br><br><br><br>", unsafe_allow_html=True)
-                    st.markdown("#### 📊 Closeness Stability by Design (Box with Mean & Median)")
+                    st.markdown("#### 📊 Closeness Stability by Design")
 
                     # Build box stats from closeness_df using 1.5*IQR whiskers (include mean)
                     def box_stats(vals: np.ndarray, eps: float = 0.01, center_on_inliers: bool = True):
@@ -1932,62 +2069,69 @@ with tabs[2]:
                     labels_wrapped = [fill(w, width=16) for w in wec_names]
                     x = np.arange(1, len(wec_names) + 1)
 
-                    fig, ax = plt.subplots(figsize=(4.6, 3.0))
+                    fig, ax = plt.subplots(figsize=(5.5, 3.2))  # match left side size
 
                     bp = ax.bxp(
                         stats,
                         positions=x,
-                        vert=True,                # vertical boxes
-                        showfliers=True,          # draw outliers (+)
+                        vert=True,
+                        showfliers=True,
                         widths=0.55,
                         patch_artist=True,
-                        medianprops=dict(color="#1565C0", linewidth=1.2, linestyle=":", dash_capstyle="round"),  # median
+                        medianprops=dict(color="#1565C0", linewidth=1.2, linestyle=":", dash_capstyle="round"),
                         whiskerprops=dict(color="#000", linewidth=0.9, zorder=6),
                         capprops=dict(color="#000", linewidth=0.9),
                         flierprops=dict(marker="+", markeredgecolor="#d32f2f",
                                         markersize=5, markeredgewidth=0.9)
                     )
 
-                    # Make box faces transparent and keep them behind the scatter
+                    # Transparent boxes behind scatter
                     for box in bp["boxes"]:
-                        box.set(facecolor="none", edgecolor="#000", linewidth=0.9, zorder=4)  # or box.set_alpha(0.25)
-
-                    # Make whiskers/caps/medians not sit above points
+                        box.set(facecolor="none", edgecolor="#000", linewidth=0.9, zorder=4)
                     for artist in bp["whiskers"] + bp["caps"] + bp["medians"] + bp.get("means", []):
                         artist.set_zorder(2)
-                    
-                    # --- before the scatter loop ---
+
+                    # ✅ Define color palette
                     from matplotlib import cm
-                    palette = list(cm.get_cmap("tab10").colors)  # 10 distinct colors
-                    # if you have more designs than colors, repeat the palette
+                    palette = list(cm.get_cmap("tab10").colors)
                     if len(palette) < len(wec_names):
                         reps = int(np.ceil(len(wec_names) / len(palette)))
                         palette = (palette * reps)[:len(wec_names)]
 
-
-                    # Now overlay the jittered scatter ABOVE the boxes
+                    # Scatter overlay
                     for i, wec in enumerate(wec_names, start=1):
                         vals = np.asarray(closeness_df[wec].values, dtype=float)
-                        xj = np.random.normal(loc=i, scale=0.03, size=len(vals))  # jitter for all points
+                        xj = np.random.normal(loc=i, scale=0.03, size=len(vals))
+                        ax.scatter(xj, vals, s=3, alpha=0.12, color=palette[i-1], linewidths=0, rasterized=True)
+                        # Annotate medians and IQR values on the plot
+                        for i, (wec, st_dict) in enumerate(zip(wec_names, stats), start=1):
+                            med = st_dict["med"]
+                            q1 = st_dict["q1"]
+                            q3 = st_dict["q3"]
 
-                        # fallback color if `palette` is not defined
-                        color = (palette[i-1] if 'palette' in locals() or 'palette' in globals() else "#1565C0")
+                            # Median label (slightly to the right of the median line)
+                            ax.text(i + 0.3, med, f"{med:.2f}", va="center", ha="left",
+                                    fontsize=7, color="#1565C0")
 
-                        ax.scatter(
-                            xj, vals,
-                            s=3,              # small dots
-                            alpha=0.12,       # transparent so density shows
-                            color=color,
-                            linewidths=0,     # no edge lines
-                            rasterized=True   # keeps figure light when saving
-                        )
+                            # Q1 label (below left of box)
+                            ax.text(i - 0.3, q1, f"{q1:.2f}", va="top", ha="right",
+                                    fontsize=7, color="black")
 
+                            # Q3 label (above left of box)
+                            ax.text(i - 0.3, q3, f"{q3:.2f}", va="bottom", ha="right",
+                                    fontsize=7, color="black")
+
+                    # Axis formatting
                     ax.set_xticks(x)
-                    ax.set_xticklabels(labels_wrapped, fontsize=7, rotation=0)
+                    ax.set_xticklabels(wec_names, fontsize=7, rotation=0)  # ✅ no wrapping
                     ax.set_ylabel("Closeness to Ideal (C*)", fontsize=8)
                     ax.set_ylim(0.0, 1.0)
                     ax.tick_params(axis="y", labelsize=7)
 
+                    # Title consistent with left plot
+                    ax.set_title("Closeness Variability by WEC Design", fontsize=10)
+
+                    # ✅ Restore your legend
                     from matplotlib.lines import Line2D
                     from matplotlib.patches import Patch
                     legend_handles = [
@@ -1996,20 +2140,29 @@ with tabs[2]:
                         Line2D([], [], marker="+", color="none", markeredgecolor="#d32f2f",
                             markersize=6, markeredgewidth=1.0, label="Outliers"),
                     ]
-
-                    leg = ax.legend(
+                    ax.legend(
                         handles=legend_handles,
                         loc="upper left",
                         bbox_to_anchor=(0.025, 0.98),
                         ncol=len(legend_handles),
                         fontsize=7,
-                        frameon=True, framealpha=0.85,
-                        handlelength=1.6, handletextpad=0.4, columnspacing=0.8, borderaxespad=0.2,
+                        frameon=True,
+                        framealpha=0.9,
+                        handlelength=1.6,
+                        handletextpad=0.6,
+                        columnspacing=1.0,
+                        borderaxespad=0.4,
+                        borderpad=0.6,        # ✅ padding inside legend box
+                        labelspacing=0.5      # ✅ vertical padding between entries
                     )
 
-                    fig.subplots_adjust(top=0.88)
-                    fig.suptitle("Closeness Variability by WEC Design", fontsize=9, y=0.99)
+                    plt.tight_layout()
+
+                    # Save & show
+                    closeness_png_path = os.path.join(output_dir, "closeness_stability.png")
+                    fig.savefig(closeness_png_path, dpi=300, bbox_inches="tight")
                     st.pyplot(fig)
+
 
                 # --- Kendall's τ distance histogram (UNCHANGED: uses ranks) ---
                 from scipy.stats import kendalltau
@@ -2024,7 +2177,7 @@ with tabs[2]:
                     tau, _ = kendalltau(list(range(len(sim_order))), sim_order)
                     tau_distances.append(1 - tau)  # distance = 1 - similarity
 
-                col1, col2 = st.columns([1.5, 1])  # Wider plot, narrower stats
+                col1, col2 = st.columns([1, 1])  # Wider plot, narrower stats
 
                 with col1:
                     st.markdown("#### 📉 Kendall’s Tau Distance from Baseline")
@@ -2035,6 +2188,11 @@ with tabs[2]:
                     ax.set_title("Distribution of Kendall’s Tau Distance over 50000 Simulations", fontsize=10)
                     ax.tick_params(axis='both', labelsize=7)
                     plt.tight_layout()
+
+                    # NEW — save HD PNG
+                    kendall_png_path = os.path.join(output_dir, "kendall_tau_histogram.png")
+                    fig.savefig(kendall_png_path, dpi=300, bbox_inches="tight")
+
                     st.pyplot(fig)
 
                 with col2:
@@ -2047,7 +2205,7 @@ with tabs[2]:
                     - **Std Dev:** {std_tau:.5f}
                     """)
 
-                # --- Save Monte Carlo Simulation Results (unchanged file names) ---
+                # --- Save Monte Carlo Simulation Results ---
                 output_dir = os.path.dirname(EXCEL_FILE)
                 rank_csv_path = os.path.join(output_dir, "montecarlo_rank_distributions.csv")
                 tau_csv_path = os.path.join(output_dir, "montecarlo_kendall_tau.csv")
@@ -2055,14 +2213,20 @@ with tabs[2]:
                 rank_df.to_csv(rank_csv_path, index=False)
                 pd.DataFrame({"KendallTauDistance": tau_distances}).to_csv(tau_csv_path, index=False)
 
-                st.success(f"✅ Monte Carlo results saved to:\n- `{rank_csv_path}`\n- `{tau_csv_path}`")
+                # UPDATED success message with PNGs
+                st.success(
+                    f"✅ Monte Carlo results saved to:\n"
+                    f"- `{rank_csv_path}`\n"
+                    f"- `{tau_csv_path}`\n"
+                    f"- `{rank_png_path}`\n"
+                    f"- `{closeness_png_path}`\n"
+                    f"- `{kendall_png_path}`"
+                )
 
             except Exception as e:
                 st.error(f"❌ Error during Monte Carlo simulation: {e}")
     else:
         st.info("⚠️ Please run the ranking first to enable sensitivity analysis.")
-
-
 
 st.markdown("---")
 st.markdown("### ⚠️ Danger Zone")
