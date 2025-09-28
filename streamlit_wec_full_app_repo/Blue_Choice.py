@@ -866,13 +866,15 @@ with tabs[0]:
 # === TAB 2: COMMUNITY INPUT ===
 import json
 from datetime import datetime
+from typing import Optional
+
 
 def plot_pis_nis_contributions_row(
     topsis_matrix: np.ndarray,
     weights: np.ndarray,
     used_themes: list,
     wec_names: list,
-    excel_path: str | None = None,
+    excel_path: Optional[str] = None,
     sheet_name: str = "PIS_NIS_Contrib",
     topk: int = 3,
 ):
