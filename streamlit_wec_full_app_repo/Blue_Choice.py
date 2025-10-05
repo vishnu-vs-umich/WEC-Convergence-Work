@@ -81,7 +81,7 @@ def create_themes_tab_with_subcriteria(sheet=None):
     theme_data = [
         ("Functional Efficiency", "Electricity reliability and security"),
         ("Functional Efficiency", "Electricity affordability"),
-        ("Environmental Sustainability", "Habitat of marine animals"),
+        ("Environmental Sustainability", "Habitat of aquatic animals"),
         ("Environmental Sustainability", "Birds"),
         ("Environmental Sustainability", "Health"),
         ("Environmental Sustainability", "Noise"),
@@ -92,8 +92,8 @@ def create_themes_tab_with_subcriteria(sheet=None):
         ("Community Prosperity", "Tax revenues"),
         ("Community Prosperity", "Indirect economic effects"),
         ("Community Prosperity", "Tourism"),
-        ("Marine Space Utilization", "Recreational fishing"),
-        ("Marine Space Utilization", "Recreational boating")
+        ("Aquatic Space Utilization", "Recreational fishing"),
+        ("Aquatic Space Utilization", "Recreational boating")
     ]
     for theme, sub in theme_data:
         ws.append([theme, sub])
@@ -288,7 +288,7 @@ def ensure_baseline_ready() -> bool:
                     "Q7 WHFS": "Environmental Sustainability",
                     "Q8 WHFS": "Sense of Place",
                     "Q9 WHFS": "Community Prosperity",
-                    "Q11 WHFS": "Marine Space Utilization"
+                    "Q11 WHFS": "Aquatic Space Utilization"
                 }
 
                 from ast import literal_eval
@@ -483,7 +483,7 @@ with tabs[0]:
             "Environmental Sustainability": "Minimization of negative impacts on marine ecosystems, wildlife, and human health.",
             "Sense of Place": "Respect for the cultural, visual, and emotional identity of the community and natural surroundings.",
             "Community Prosperity": "Opportunities for local economic development, job creation, tourism, and indirect financial benefits.",
-            "Marine Space Utilization": "Efficient and harmonious coexistence with existing maritime activities such as fishing and recreation."
+            "Aquatic Space Utilization": "Efficient and harmonious coexistence with existing maritime activities such as fishing and recreation."
         }
 
         table_html = """
@@ -1107,7 +1107,7 @@ with tabs[1]:
             "Q7 Ecosystem Concern", "Q7 Explanation", "Q7 WHFS",
             "Q8 Visual Concern", "Q8 Explanation", "Q8 WHFS",
             "Q9 Economic Concern", "Q9 Explanation", "Q9 WHFS",
-            "Q11 Marine Space Utilization Concern", "Q11 Explanation", "Q11 WHFS",
+            "Q11 Aquatic Space Utilization Concern", "Q11 Explanation", "Q11 WHFS",
             "Q10 Contact?", "Name", "Email", "Phone"
         ]
 
@@ -1154,7 +1154,7 @@ with tabs[2]:
                 "Q7 WHFS": "Environmental Sustainability",
                 "Q8 WHFS": "Sense of Place",
                 "Q9 WHFS": "Community Prosperity",
-                "Q11 WHFS": "Marine Space Utilization"
+                "Q11 WHFS": "Aquatic Space Utilization"
             }
 
             from ast import literal_eval
@@ -1464,7 +1464,7 @@ with tabs[2]:
 
                 # Preferred theme order + abbreviations for legend
                 preferred = ["Functional Efficiency", "Environmental Sustainability",
-                            "Community Prosperity", "Sense of Place", "Marine Space Utilization"]
+                            "Community Prosperity", "Sense of Place", "Aquatic Space Utilization"]
                 theme_order = [t for t in preferred if t in used_themes] + [t for t in used_themes if t not in preferred]
                 order_idx = [used_themes.index(t) for t in theme_order]
                 theme_abbrev = {
@@ -1472,7 +1472,7 @@ with tabs[2]:
                     "Environmental Sustainability": "ES",
                     "Community Prosperity": "CP",
                     "Sense of Place": "SP",
-                    "Marine Space Utilization": "MSU",
+                    "Aquatic Space Utilization": "ASU",
                 }
 
                 # Reallocate weights: set w_j = x, keep others proportional to baseline, renormalize to 1
@@ -1581,7 +1581,7 @@ with tabs[2]:
 
                 # Preferred theme order + abbreviations for legend
                 preferred = ["Functional Efficiency", "Environmental Sustainability",
-                            "Community Prosperity", "Sense of Place", "Marine Space Utilization"]
+                            "Community Prosperity", "Sense of Place", "Aquatic Space Utilization"]
                 theme_order = [t for t in preferred if t in used_themes] + [t for t in used_themes if t not in preferred]
                 order_idx = [used_themes.index(t) for t in theme_order]
                 theme_abbrev = {
@@ -1589,7 +1589,7 @@ with tabs[2]:
                     "Environmental Sustainability": "ES",
                     "Community Prosperity": "CP",
                     "Sense of Place": "SP",
-                    "Marine Space Utilization": "MSU",
+                    "Aquatic Space Utilization": "ASU",
                 }
 
                 # Same reweight rule you used in the sweep: put x on j, keep others proportional to baseline
@@ -1727,9 +1727,6 @@ with tabs[2]:
                 ax.set_yticklabels([f"{y:.2f}" if y in label_rings else "" for y in all_rings], fontsize=6)
 
                 ax.grid(True, linestyle='--', linewidth=0.5, alpha=0.6)
-
-                # Add WEC title below the plot
-                fig.text(0.5, -0.08, f"{idx}", ha='center', fontsize=10)
 
                 safe_name = idx.replace(" ", "_").replace("/", "_").lower()
                 image_path = os.path.join(os.path.dirname(EXCEL_FILE), f"{safe_name}_radar_chart.png")
