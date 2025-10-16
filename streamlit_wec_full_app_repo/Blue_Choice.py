@@ -28,7 +28,8 @@ client = AzureOpenAI(
     organization="018827"
 )
 
-EXCEL_FILE = "bluechoice_data.xlsx"
+# EXCEL_FILE = "bluechoice_data.xlsx"
+EXCEL_FILE = "SA_bluechoice_data.xlsx"
 
 def read_excel(sheet_name):
     if not os.path.exists(EXCEL_FILE):
@@ -266,7 +267,8 @@ def ensure_baseline_ready() -> bool:
 
         # --- Load Preliminary Survey theme weights (optional but preferred) ---
         try:
-            prelim_df = pd.read_excel("BI_Preliminary_Survey.xlsx")
+            # prelim_df = pd.read_excel("BI_Preliminary_Survey.xlsx")
+            prelim_df = pd.read_excel("SA_BI_Preliminary_Survey.xlsx")
             prelim_df = prelim_df.dropna(subset=["Theme Percentage %"])
             prelim_theme_weights = prelim_df.groupby("Theme")["Theme Percentage %"].mean()
             prelim_theme_weights /= prelim_theme_weights.sum()
@@ -1137,7 +1139,8 @@ with tabs[2]:
             ahp_df = pd.read_excel(EXCEL_FILE, sheet_name="AHP Decision Matrix", index_col=0)
 
             # --- Load Preliminary Survey ---
-            prelim_df = pd.read_excel("BI_Preliminary_Survey.xlsx")
+            # prelim_df = pd.read_excel("BI_Preliminary_Survey.xlsx")
+            prelim_df = pd.read_excel("SA_BI_Preliminary_Survey.xlsx")
             prelim_df = prelim_df.dropna(subset=["Theme Percentage %"])
             prelim_theme_weights = prelim_df.groupby("Theme")["Theme Percentage %"].mean()
             prelim_theme_weights /= prelim_theme_weights.sum()
