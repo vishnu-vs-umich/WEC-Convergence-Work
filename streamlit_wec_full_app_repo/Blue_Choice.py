@@ -1270,7 +1270,7 @@ with tabs[2]:
                 import matplotlib.colors as mcolors
                 import matplotlib.pyplot as plt
 
-                bins = np.array([0.00, 0.35, 0.45, 0.48, 0.50, 0.52, 0.55, 0.65, 1.00])
+                bins = np.array([0.00, 0.30, 0.40, 0.44, 0.50, 0.56, 0.60, 0.65, 1.00])
                 cmap = plt.get_cmap("turbo", len(bins) - 1)
                 norm = mcolors.BoundaryNorm(bins, cmap.N, clip=True)
 
@@ -1283,8 +1283,8 @@ with tabs[2]:
                 cbar = plt.colorbar(sc, ax=ax, fraction=0.046, pad=0.04, boundaries=bins)
                 cbar.set_label("Closeness to Ideal (C*)", fontsize=6)
                 cbar.ax.tick_params(labelsize=6)
-                cbar.set_ticks([0.00, 0.45, 0.50, 0.55, 1.00])
-                cbar.set_ticklabels(["0.00", "0.45", "0.50", "0.55", "1.00"])
+                cbar.set_ticks([0.00, 0.40, 0.50, 0.60, 1.00])
+                cbar.set_ticklabels(["0.00", "0.40", "0.50", "0.60", "1.00"])
 
                 # Annotate each point with name + C*
                 for xi, yi, nm, c in zip(x, y, names, closeness):
