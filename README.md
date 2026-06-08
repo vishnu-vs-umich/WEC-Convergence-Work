@@ -48,9 +48,12 @@ Installation
 
    Linux / macOS (bash/zsh):
        python3 -m venv venv
+
        source venv/bin/activate
 
 3. Install Dependencies
+
+   cd streamlit_wec_full_app_repo
 
    pip install -r requirements.txt
 
@@ -68,6 +71,15 @@ Installation
 ------------------------------------------------------
 Running the Application
 ------------------------------------------------------
+
+Add your OpenAI API key:
+    
+    mkdir -p "/Users/shawn/Desktop/GCR code/WEC-Convergence-Work/streamlit_wec_full_app_repo/.streamlit"
+    touch "/Users/shawn/Desktop/GCR code/WEC-Convergence-Work/streamlit_wec_full_app_repo/.streamlit/secrets.toml"
+
+Then open the file "secrets.toml", and add you API key: 
+
+    OPENAI_API_KEY = "sk-..."
 
 Windows:
     streamlit run Blue_Choice.py
