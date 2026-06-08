@@ -43,19 +43,22 @@ Installation
 2. Create a Virtual Environment
 
    Windows (PowerShell):
-       python -m venv venv
-       venv\Scripts\activate
+   
+        python -m venv venv
+   
+        venv\Scripts\activate
 
    Linux / macOS (bash/zsh):
-       python3 -m venv venv
+       
+        python3 -m venv venv
 
-       source venv/bin/activate
+        source venv/bin/activate
 
 3. Install Dependencies
 
-   cd streamlit_wec_full_app_repo
+        cd streamlit_wec_full_app_repo
 
-   pip install -r requirements.txt
+        pip install -r requirements.txt
 
    If requirements.txt is not present, create it with the following content:
 
