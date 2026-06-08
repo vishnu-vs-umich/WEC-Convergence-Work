@@ -42,11 +42,11 @@ Installation
 
 2. Create a Virtual Environment
 
-   Windows (PowerShell):
+   <!-- Windows (PowerShell):
    
         python -m venv venv
    
-        venv\Scripts\activate
+        venv\Scripts\activate -->
 
    Linux / macOS (bash/zsh):
        
@@ -84,10 +84,11 @@ Then open the file "secrets.toml", and add you API key:
 
     OPENAI_API_KEY = "sk-..."
 
-Windows:
-    streamlit run Blue_Choice.py
+<!-- Windows:
+    streamlit run Blue_Choice.py -->
 
 Linux / macOS:
+    
     streamlit run Blue_Choice.py
 
 The application will start a local server and provide a URL (e.g., http://localhost:8501). Open this link in a web browser.
